@@ -1,6 +1,7 @@
 // lib/movie_log_app.dart
 import 'package:flutter/material.dart';
-import 'start_screen.dart'; // StartScreen 클래스 import
+import 'screens/profile/profile_screen.dart';
+import 'theme/app_theme.dart';
 
 class MovieLogApp extends StatelessWidget {
   const MovieLogApp({super.key});
@@ -10,12 +11,8 @@ class MovieLogApp extends StatelessWidget {
     return MaterialApp(
       debugShowCheckedModeBanner: false,
       title: 'MovieLog',
-      theme: ThemeData(
-        useMaterial3: true,
-        colorScheme: ColorScheme.fromSeed(seedColor: const Color(0xFF6750A4)),
-        scaffoldBackgroundColor: const Color(0xFFFAF9F5), // W0-01 배경색
-      ),
-      home: const StartScreen(), // 첫 실행 화면 지정
+      theme: AppTheme.light, // 공통 Theme 적용
+      home: const ProfileScreen(), // 1주차 실습 화면
     );
   }
 }
