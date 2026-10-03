@@ -5,6 +5,7 @@ import 'package:flutter_test/flutter_test.dart';
 
 import 'package:movielog/movie_log_app.dart';
 import 'package:movielog/screens/profile/profile_screen.dart';
+import 'package:movielog/screens/profile/widgets/profile_header.dart';
 import 'package:movielog/start_screen.dart';
 import 'package:movielog/widgets/stat_item.dart';
 
@@ -36,5 +37,21 @@ void main() {
       findsOneWidget,
     );
     expect(find.widgetWithText(ElevatedButton, '시작하기'), findsOneWidget);
+  });
+
+  testWidgets('프로필 이미지가 없으면 기본 아이콘을 보여준다', (WidgetTester tester) async {
+    await tester.pumpWidget(
+      const MaterialApp(
+        home: Scaffold(
+          body: ProfileHeader(
+            nickname: '무비러버',
+            introduction: '소개',
+          ),
+        ),
+      ),
+    );
+
+    expect(find.byIcon(Icons.person), findsOneWidget);
+    expect(find.byType(Image), findsNothing);
   });
 }

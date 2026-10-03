@@ -38,9 +38,7 @@ class FavoriteGenres extends StatelessWidget {
         Wrap(
           spacing: 8,
           runSpacing: 8,
-          children: [
-            for (final genre in genres) Chip(label: Text(genre)),
-          ],
+          children: genres.map((genre) => Chip(label: Text(genre))).toList(),
         ),
       ],
     );

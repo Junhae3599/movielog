@@ -1,14 +1,14 @@
 // lib/screens/profile/widgets/profile_stats.dart
 import 'package:flutter/material.dart';
 
+import '../../../models/profile_stat.dart';
 import '../../../widgets/stat_item.dart';
 
-/// 통계 카드 3개를 한 줄에 배치하는 영역.
+/// 통계 카드를 한 줄에 배치하는 영역.
 class ProfileStats extends StatelessWidget {
   const ProfileStats({super.key, required this.stats});
 
-  /// 라벨과 값의 쌍. 개수가 늘어도 같은 코드로 처리된다.
-  final List<({String label, String value})> stats;
+  final List<ProfileStat> stats;
 
   @override
   Widget build(BuildContext context) {
@@ -17,16 +17,17 @@ class ProfileStats extends StatelessWidget {
       margin: const EdgeInsets.symmetric(vertical: 32),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.center,
-        children: [
-          for (final (index, stat) in stats.indexed) ...[
-            if (index > 0) const SizedBox(width: 8),
-            // 고정 너비를 주면 화면 폭을 넘어 RenderFlex Overflow 가 나므로
-            // 남은 가로 공간을 카드끼리 똑같이 나눠 갖게 한다.
-            Expanded(
-              child: StatItem(label: stat.label, value: stat.value),
-            ),
-          ],
-        ],
+        spacing: 8,
+        // 데이터 목록에서 Widget 을 만든다. 항목이 늘어도 이 코드는 그대로다.
+        children: stats
+            .map(
+              // 고정 너비를 주면 화면 폭을 넘어 RenderFlex Overflow 가 나므로
+              // 남은 가로 공간을 카드끼리 똑같이 나눠 갖게 한다.
+              (stat) => Expanded(
+                child: StatItem(label: stat.label, value: stat.value),
+              ),
+            )
+            .toList(),
       ),
     );
   }
