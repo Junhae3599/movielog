@@ -42,6 +42,29 @@ abstract final class AppTheme {
         systemNavigationBarIconBrightness: Brightness.dark,
       ),
     ),
+    inputDecorationTheme: InputDecorationTheme(
+      filled: true,
+      fillColor: AppColors.fieldFill,
+      hintStyle: AppTextStyles.bodyMedium.copyWith(color: AppColors.gray),
+      errorStyle: AppTextStyles.errorText,
+      contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 18),
+      // 상태별 테두리. 오류일 때는 배경색까지 바뀌므로 화면에서 따로 처리한다.
+      enabledBorder: _fieldBorder(AppColors.fieldBorder),
+      focusedBorder: _fieldBorder(AppColors.violet, width: 2),
+      errorBorder: _fieldBorder(AppColors.error),
+      focusedErrorBorder: _fieldBorder(AppColors.error, width: 2),
+      disabledBorder: _fieldBorder(AppColors.fieldBorder),
+    ),
+    checkboxTheme: CheckboxThemeData(
+      fillColor: WidgetStateProperty.resolveWith(
+        (states) => states.contains(WidgetState.selected)
+            ? AppColors.violet
+            : AppColors.white,
+      ),
+      checkColor: const WidgetStatePropertyAll(AppColors.white),
+      side: const BorderSide(color: AppColors.fieldBorder, width: 2),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
+    ),
     chipTheme: ChipThemeData(
       backgroundColor: AppColors.lavender,
       labelStyle: AppTextStyles.chip,
@@ -64,8 +87,11 @@ abstract final class AppTheme {
     ),
     elevatedButtonTheme: ElevatedButtonThemeData(
       style: ElevatedButton.styleFrom(
-        backgroundColor: AppColors.violetDeep,
+        backgroundColor: AppColors.violet,
         foregroundColor: AppColors.white,
+        // onPressed 가 null 이면 자동으로 이 색이 쓰인다.
+        disabledBackgroundColor: AppColors.violetDisabled,
+        disabledForegroundColor: AppColors.white,
         minimumSize: const Size(double.infinity, 56),
         textStyle: const TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
         shape: RoundedRectangleBorder(
@@ -74,4 +100,12 @@ abstract final class AppTheme {
       ),
     ),
   );
+
+  /// 입력창 테두리는 색과 두께만 다르므로 한곳에서 만든다.
+  static OutlineInputBorder _fieldBorder(Color color, {double width = 1}) {
+    return OutlineInputBorder(
+      borderRadius: BorderRadius.circular(12),
+      borderSide: BorderSide(color: color, width: width),
+    );
+  }
 }

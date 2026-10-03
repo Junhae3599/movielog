@@ -32,4 +32,19 @@ abstract final class AppColors {
 
   /// 카드와 버튼 테두리.
   static const border = Color(0xFFE7E0EC);
+
+  /// 입력창 배경.
+  static const fieldFill = Color(0xFFF4F3EF);
+
+  /// 입력창 테두리.
+  static const fieldBorder = Color(0xFFE3E1DE);
+
+  /// 비활성화된 가입 버튼 배경.
+  static const violetDisabled = Color(0xFFCCC2DB);
+
+  /// 오류 메시지와 테두리.
+  static const error = Color(0xFFB3261E);
+
+  /// 오류 상태의 입력창 배경.
+  static const errorFill = Color(0xFFFFDAD7);
 }
