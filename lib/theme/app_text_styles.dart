@@ -49,6 +49,20 @@ abstract final class AppTextStyles {
     color: AppColors.gray,
   );
 
+  /// 입력창 위의 라벨.
+  static const fieldLabel = TextStyle(
+    fontSize: 16,
+    fontWeight: FontWeight.w700,
+    color: AppColors.black,
+  );
+
+  /// 입력창 아래의 오류 메시지.
+  static const errorText = TextStyle(
+    fontSize: 13,
+    fontWeight: FontWeight.w400,
+    color: AppColors.error,
+  );
+
   /// Chip 글자.
   static const chip = TextStyle(
     fontSize: 14,
