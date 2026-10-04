@@ -54,17 +54,21 @@ class _RatingScreenState extends State<RatingScreen> {
                 style: AppTextStyles.bodyMedium,
               ),
               const SizedBox(height: 32),
-              RatingBar.builder(
-                initialRating: _rating,
-                minRating: 0.5,
-                allowHalfRating: true,
-                itemCount: 5,
-                itemSize: 44,
-                glow: false,
-                itemPadding: const EdgeInsets.symmetric(horizontal: 4),
-                itemBuilder: (context, _) =>
-                    const Icon(Icons.star, color: AppColors.violet),
-                onRatingUpdate: (rating) => setState(() => _rating = rating),
+              // Column 이 stretch 라 감싸지 않으면 별이 가로 전체를 차지하고
+              // 왼쪽부터 깔린다.
+              Center(
+                child: RatingBar.builder(
+                  initialRating: _rating,
+                  minRating: 0.5,
+                  allowHalfRating: true,
+                  itemCount: 5,
+                  itemSize: 44,
+                  glow: false,
+                  itemPadding: const EdgeInsets.symmetric(horizontal: 4),
+                  itemBuilder: (context, _) =>
+                      const Icon(Icons.star, color: AppColors.violet),
+                  onRatingUpdate: (rating) => setState(() => _rating = rating),
+                ),
               ),
               const SizedBox(height: 24),
               Text(
