@@ -103,4 +103,55 @@ void main() {
       expect(find.byIcon(Icons.visibility), findsOneWidget);
     });
   });
+
+  group('회원가입 레이아웃', () {
+    /// 주어진 크기와 텍스트 배율로 회원가입 화면을 띄운다.
+    Future<void> pumpAt(WidgetTester tester, Size size,
+        {double scale = 1.0}) async {
+      tester.view.physicalSize = size * 2.0;
+      tester.view.devicePixelRatio = 2.0;
+      addTearDown(tester.view.reset);
+
+      await tester.pumpWidget(MediaQuery(
+        data: MediaQueryData(
+          size: size,
+          textScaler: TextScaler.linear(scale),
+        ),
+        child: MaterialApp(theme: AppTheme.light, home: const SignUpScreen()),
+      ));
+      await tester.pumpAndSettle();
+    }
+
+    testWidgets('넓은 화면에서는 AppBar 대신 제목을 보여준다', (tester) async {
+      await pumpAt(tester, const Size(1280, 900));
+
+      expect(find.byType(AppBar), findsNothing);
+      expect(find.text('MovieLog에 오신 것을 환영합니다!'), findsOneWidget);
+    });
+
+    testWidgets('좁은 화면에서는 AppBar 를 보여준다', (tester) async {
+      await pumpAt(tester, const Size(390, 845));
+
+      expect(find.byType(AppBar), findsOneWidget);
+    });
+
+    // 글꼴에 따라 실제 높이가 커져도 Overflow 없이 푸터까지 보여야 한다.
+    // IntrinsicHeight 를 넓은 화면까지 쓰면 여기서 깨진다.
+    testWidgets('화면 크기와 글자 배율이 달라져도 Overflow 가 없다', (tester) async {
+      for (final size in [
+        const Size(1860, 700),
+        const Size(1860, 560),
+        const Size(390, 845),
+      ]) {
+        for (final scale in [1.0, 1.3]) {
+          await pumpAt(tester, size, scale: scale);
+
+          expect(tester.takeException(), isNull,
+              reason: '$size scale=$scale 에서 Overflow');
+          expect(find.text('이미 계정이 있나요?'), findsOneWidget,
+              reason: '$size scale=$scale 에서 푸터가 잘림');
+        }
+      }
+    });
+  });
 }

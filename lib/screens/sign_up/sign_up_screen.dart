@@ -112,15 +112,12 @@ class _SignUpScreenState extends State<SignUpScreen> {
                   vertical: 24,
                 ),
                 child: ConstrainedBox(
-                  constraints: BoxConstraints(
+                  constraints: const BoxConstraints(
                     maxWidth: SignUpScreen.maxFormWidth,
-                    // 좁은 화면에서는 내용이 화면 높이를 채워야 Spacer 가
-                    // 약관과 버튼을 아래로 밀 수 있다. 넓은 화면에서는
-                    // 0으로 두어 내용 높이만 쓰고 가운데로 모이게 한다.
-                    minHeight: isWide ? 0 : constraints.maxHeight - 48,
                   ),
-                  // Spacer 가 쓸 높이를 확정해 준다.
-                  child: IntrinsicHeight(child: _buildForm(isWide: isWide)),
+                  child: isWide
+                      ? _buildForm(isWide: true)
+                      : _buildNarrowForm(constraints),
                 ),
               ),
             );
@@ -130,11 +127,26 @@ class _SignUpScreenState extends State<SignUpScreen> {
     );
   }
 
+  /// 좁은 화면에서는 약관과 버튼을 화면 아래에 붙인다.
+  ///
+  /// Spacer 는 남은 높이를 받아야 늘어나는데 ScrollView 안은 높이가 무한이다.
+  /// minHeight 로 화면 높이를 내려주고 IntrinsicHeight 로 확정해 줘야 한다.
+  /// 넓은 화면에는 Spacer 가 없으므로 이 장치를 쓰지 않는다. IntrinsicHeight 가
+  /// 잡는 예상 높이와 글꼴에 따른 실제 높이가 어긋나면 Overflow 가 난다.
+  Widget _buildNarrowForm(BoxConstraints constraints) {
+    return ConstrainedBox(
+      constraints: BoxConstraints(minHeight: constraints.maxHeight - 48),
+      child: IntrinsicHeight(child: _buildForm(isWide: false)),
+    );
+  }
+
   Widget _buildForm({required bool isWide}) {
     return Form(
       key: _formKey,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
+        // 넓은 화면에서는 내용 높이만 써야 Center 가 가운데로 모을 수 있다.
+        mainAxisSize: isWide ? MainAxisSize.min : MainAxisSize.max,
         children: [
           SignUpHeader(showTitle: isWide),
           const SizedBox(height: 32),
