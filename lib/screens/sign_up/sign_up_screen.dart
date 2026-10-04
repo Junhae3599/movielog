@@ -1,11 +1,12 @@
 // lib/screens/sign_up/sign_up_screen.dart
 import 'package:flutter/material.dart';
 
+import 'package:go_router/go_router.dart';
+
 import '../../theme/app_colors.dart';
 import '../../validators/sign_up_validators.dart';
 import '../../widgets/common_app_bar.dart';
 import '../../widgets/movie_log_text_form_field.dart';
-import '../rating/rating_screen.dart';
 import 'widgets/sign_up_footer.dart';
 import 'widgets/sign_up_header.dart';
 import 'widgets/terms_checkbox.dart';
@@ -69,17 +70,11 @@ class _SignUpScreenState extends State<SignUpScreen> {
     FocusScope.of(context).unfocus();
 
     ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: const Text('가입이 완료되었습니다.'),
-        action: SnackBarAction(
-          label: '평점 남기기',
-          textColor: AppColors.white,
-          onPressed: () => Navigator.of(context).push(
-            MaterialPageRoute(builder: (_) => const RatingScreen()),
-          ),
-        ),
-      ),
+      const SnackBar(content: Text('가입이 완료되었습니다.')),
     );
+
+    // go 는 스택을 교체하므로 홈에서 회원가입으로 돌아갈 수 없다.
+    context.go('/home');
   }
 
   @override
@@ -90,13 +85,10 @@ class _SignUpScreenState extends State<SignUpScreen> {
         MediaQuery.sizeOf(context).width >= SignUpScreen.wideBreakpoint;
 
     return Scaffold(
+      // 회원가입에서는 뒤로 갈 곳이 없으므로 뒤로가기 버튼을 두지 않는다.
       appBar: isWide
           ? null
-          : CommonAppBar(
-              title: '회원가입',
-              centerTitle: true,
-              onBack: () => Navigator.of(context).maybePop(),
-            ),
+          : const CommonAppBar(title: '회원가입', centerTitle: true),
       body: SafeArea(
         // Form 이 실제로 쓸 수 있는 공간은 SafeArea 를 지난 뒤에 정해진다.
         child: LayoutBuilder(

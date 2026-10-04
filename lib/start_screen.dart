@@ -1,6 +1,7 @@
 // lib/start_screen.dart
 import 'package:flutter/material.dart'; // Material 패키지 import
 import 'package:flutter_svg/flutter_svg.dart';
+import 'package:go_router/go_router.dart';
 
 import 'theme/app_colors.dart';
 import 'theme/app_text_styles.dart';
@@ -52,8 +53,8 @@ class StartScreen extends StatelessWidget {
               const Spacer(), // 남은 공간을 밀어 버튼을 화면 아래에 배치
               ElevatedButton(
                 onPressed: () {
-                  // 0주차에는 로그만 출력하고 화면 이동은 구현하지 않습니다.
-                  debugPrint('시작하기 버튼을 눌렀습니다.');
+                  // go 는 스택을 교체하므로 회원가입에서 뒤로 돌아올 수 없다.
+                  context.go('/sign-up');
                 },
                 child: const Text('시작하기'),
               ),
