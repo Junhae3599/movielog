@@ -8,6 +8,8 @@ import 'package:movielog/screens/movies/widgets/genre_filter_sheet.dart';
 import 'package:movielog/theme/app_theme.dart';
 import 'package:movielog/widgets/movie_rating_input.dart';
 
+import 'test_helpers.dart';
+
 Future<void> pumpApp(WidgetTester tester, {required String at}) async {
   tester.view.physicalSize = const Size(900, 2200);
   tester.view.devicePixelRatio = 2.0;
@@ -17,6 +19,8 @@ Future<void> pumpApp(WidgetTester tester, {required String at}) async {
   await tester.pumpWidget(
     MaterialApp.router(theme: AppTheme.light, routerConfig: appRouter),
   );
+  await tester.pumpAndSettle();
+  await tester.pump(loadingDelay);
   await tester.pumpAndSettle();
 }
 
@@ -36,6 +40,7 @@ Future<void> tapStar(WidgetTester tester, int index) async {
 }
 
 void main() {
+  setUp(useInMemoryPreferences);
   tearDown(() => appRouter.go('/'));
 
   testWidgets('즐겨찾기를 누르면 아이콘이 바뀌고 Snackbar 가 뜬다', (tester) async {

@@ -14,6 +14,8 @@ import 'package:movielog/start_screen.dart';
 import 'package:movielog/theme/app_theme.dart';
 import 'package:movielog/widgets/movie_card.dart';
 
+import 'test_helpers.dart';
+
 /// Router 를 쓰는 앱을 띄우고 원하는 위치로 이동한다.
 Future<void> pumpApp(WidgetTester tester, {String at = '/'}) async {
   tester.view.physicalSize = const Size(900, 2200);
@@ -25,9 +27,13 @@ Future<void> pumpApp(WidgetTester tester, {String at = '/'}) async {
     MaterialApp.router(theme: AppTheme.light, routerConfig: appRouter),
   );
   await tester.pumpAndSettle();
+  // 영화 목록은 비동기로 불러오므로 Loading 이 끝날 때까지 기다린다.
+  await tester.pump(loadingDelay);
+  await tester.pumpAndSettle();
 }
 
 void main() {
+  setUp(useInMemoryPreferences);
   tearDown(() => appRouter.go('/'));
 
   testWidgets('시작 → 회원가입 → 홈 흐름에서 뒤로 갈 수 없다', (tester) async {
