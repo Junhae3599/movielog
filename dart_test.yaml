@@ -1,0 +1,5 @@
+tags:
+  live:
+    # 실제 TMDB 서버를 호출하는 테스트. .env 의 Token 이 필요하고 네트워크에 의존하므로
+    # 기본 `flutter test` 에서는 건너뛴다. 확인할 때만 `flutter test --tags live` 로 실행한다.
+    skip: "실제 TMDB 호출: flutter test --tags live 로 실행하세요."

@@ -107,9 +107,55 @@ lib/
 ## 검증 (2026-10-28)
 
 ```
-flutter analyze  → No issues found!
-flutter test     → All tests passed! (55개)
+flutter analyze              → No issues found!
+flutter test                 → All tests passed! (55개, live 1건 skip)
+flutter test --tags live --run-skipped
+                             → All tests passed! (6개, 실제 TMDB 호출)
+flutter build web --debug    → ✓ Built build/web
 ```
+
+### 실제 TMDB 호출 결과
+
+`test/tmdb_live_test.dart` 가 실제 서버를 불러 확인한 내용입니다.
+
+```
+[TMDB 요청 Header] {Authorization: Bearer ***, accept: application/json}   ← Token 마스킹
+
+[TMDB 응답] 200 .../movie/popular?language=ko-KR&page=1
+[Popular] total_pages=1001 results=20 → 인기 5개
+  id=969681  스파이더맨: 브랜드 뉴 데이  (poster=true) genreIds=[878, 28, 12]
+  id=1058424 호프                      (poster=true) genreIds=[878, 9648, 28]
+  id=1101412 폴2: 데드포인트            (poster=true) genreIds=[53]
+
+[TMDB 응답] 200 .../genre/movie/list?language=ko
+[Genre] 19개   12 모험 / 16 애니메이션 / 35 코미디 / 80 범죄 / 99 다큐멘터리 ...
+
+[TMDB 응답] 200 .../discover/movie?...&page=1
+[TMDB 응답] 200 .../discover/movie?...&page=2
+[Discover 전체] 30개 (고유 id 30개)        ← 하드코딩 없이 2페이지를 모아 30개
+
+[TMDB 응답] 200 .../discover/movie?...&page=1&with_genres=878
+[TMDB 응답] 200 .../discover/movie?...&page=2&with_genres=878
+[Discover with_genres=878] 30개, 전체 목록과 겹치는 영화 8개
+  ← 로컬 where 필터가 아니라 Query 에 with_genres 가 실려 나간 재조회
+  ← 결과 30개 전부 genreIds 에 878 을 포함
+
+"전체" 선택 → with_genres 가 Query 에서 빠진 요청으로 다시 조회
+```
+
+#### 요청 실패 재현 (Challenge)
+
+`.env` 의 Token 을 일부러 잘못된 값으로 바꾸고 호출한 로그입니다.
+
+```
+[TMDB 요청 Header] {Authorization: Bearer ***, accept: application/json}   ← 오류 경로에서도 마스킹
+[TMDB 오류] https://api.themoviedb.org/3/movie/popular?language=ko-KR&page=1
+[TMDB 오류 status] 401
+[TMDB 오류 내용] ... the response has a status code of 401 ...
+```
+
+이때 화면에는 "TMDB 인증에 실패했어요. Token 설정을 확인해 주세요." 가 표시됩니다.
+`kDebugMode` 가 false 인 release 빌드에서는 Interceptor 를 달지 않으므로 이 로그가 출력되지 않습니다.
 
 | 테스트 파일 | 확인하는 것 |
 | --- | --- |
@@ -119,10 +165,18 @@ flutter test     → All tests passed! (55개)
 | `test/async_movie_list_test.dart` | Loading/Empty/Error/Success 화면, 재시도, Chip 재조회, 재시도 Dialog |
 | `test/router_test.dart` | 화면 전환, 홈 인기 5개, 상세 경로에 TMDB id 전달 |
 | `test/interaction_test.dart` | 평점 Dialog, 즐겨찾기 Snackbar, BottomSheet 가 Genre API 결과로 채워짐 |
+| `test/tmdb_live_test.dart` | **실제 TMDB 호출.** Token 로드, Popular/Genre/Discover 200, 30개 수집, `with_genres` 재조회 |
 
-테스트는 `test/fakes/fake_tmdb_movie_service.dart` 로 TMDB 를 대신합니다.
+`tmdb_live_test.dart` 를 뺀 나머지는 `test/fakes/fake_tmdb_movie_service.dart` 로 TMDB 를 대신합니다.
 UI Layer 는 Data Layer 가 돌려주는 DTO 타입만 알면 되므로, Token 이 없거나
-TMDB 가 점검 중이어도 테스트는 그대로 돌아갑니다.
+TMDB 가 점검 중이어도 이 테스트들은 그대로 돌아갑니다.
+
+실제 서버를 부르는 `tmdb_live_test.dart` 는 `dart_test.yaml` 의 tag 설정으로
+기본 실행에서 건너뜁니다. 확인할 때만 다음으로 실행합니다.
+
+```bash
+flutter test --tags live --run-skipped
+```
 
 ## Challenge Mission 구현 상태
 
