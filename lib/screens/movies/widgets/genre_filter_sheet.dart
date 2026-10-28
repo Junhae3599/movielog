@@ -1,28 +1,33 @@
 // lib/screens/movies/widgets/genre_filter_sheet.dart
 import 'package:flutter/material.dart';
 
-import '../../../data/mock_movies.dart';
+import '../../../data/models/tmdb_genre_dto.dart';
 import '../../../theme/app_text_styles.dart';
 
 /// 장르를 여러 개 고를 수 있는 BottomSheet.
 ///
+/// 5주차부터 장르 목록은 하드코딩이 아니라 TMDB Genre API 가 내려준 id/name 이다.
+///
 /// 확인을 누르기 전까지는 시트 안의 선택 상태만 바뀌고 목록에는 반영하지 않는다.
-/// 확인을 누르면 고른 장르 집합을 돌려주고, 그냥 닫으면 null 을 돌려준다.
+/// 확인을 누르면 고른 장르 ID 목록을 돌려주고, 그냥 닫으면 null 을 돌려준다.
 class GenreFilterSheet extends StatefulWidget {
-  const GenreFilterSheet({super.key, required this.initialSelection});
+  const GenreFilterSheet({
+    super.key,
+    required this.genres,
+    required this.initialSelection,
+  });
 
-  final Set<String> initialSelection;
+  final List<TmdbGenreDto> genres;
+
+  /// 이미 선택된 장르 ID. 비어 있으면 "전체".
+  final List<int> initialSelection;
 
   @override
   State<GenreFilterSheet> createState() => _GenreFilterSheetState();
 }
 
 class _GenreFilterSheetState extends State<GenreFilterSheet> {
-  late final Set<String> _selected = {...widget.initialSelection};
-
-  /// 전체는 "필터 없음"을 뜻하므로 고를 대상에서 뺀다.
-  static final _options =
-      genres.where((genre) => genre != allGenresLabel).toList();
+  late final Set<int> _selected = {...widget.initialSelection};
 
   @override
   Widget build(BuildContext context) {
@@ -66,18 +71,18 @@ class _GenreFilterSheetState extends State<GenreFilterSheet> {
               child: ListView.builder(
                 controller: scrollController,
                 padding: const EdgeInsets.symmetric(horizontal: 8),
-                itemCount: _options.length,
+                itemCount: widget.genres.length,
                 itemBuilder: (context, index) {
-                  final genre = _options[index];
+                  final genre = widget.genres[index];
                   return CheckboxListTile(
-                    value: _selected.contains(genre),
-                    title: Text(genre, style: AppTextStyles.bodyMedium),
+                    value: _selected.contains(genre.id),
+                    title: Text(genre.name, style: AppTextStyles.bodyMedium),
                     controlAffinity: ListTileControlAffinity.leading,
                     onChanged: (checked) => setState(() {
                       if (checked ?? false) {
-                        _selected.add(genre);
+                        _selected.add(genre.id);
                       } else {
-                        _selected.remove(genre);
+                        _selected.remove(genre.id);
                       }
                     }),
                   );
@@ -89,7 +94,9 @@ class _GenreFilterSheetState extends State<GenreFilterSheet> {
               child: Padding(
                 padding: const EdgeInsets.fromLTRB(20, 8, 20, 16),
                 child: ElevatedButton(
-                  onPressed: () => Navigator.of(context).pop(_selected),
+                  // 선택이 없으면 빈 목록을 돌려주고, 화면은 with_genres 없이 조회한다.
+                  onPressed: () =>
+                      Navigator.of(context).pop(_selected.toList()),
                   child: Text(
                     _selected.isEmpty ? '전체 보기' : '${_selected.length}개 장르 보기',
                   ),
