@@ -6,21 +6,42 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:movielog/router/app_router.dart';
 import 'package:movielog/screens/movies/widgets/genre_filter_sheet.dart';
 import 'package:movielog/theme/app_theme.dart';
+import 'package:movielog/widgets/movie_card.dart';
 import 'package:movielog/widgets/movie_rating_input.dart';
 
+import 'fakes/fake_tmdb_movie_service.dart';
 import 'test_helpers.dart';
 
-Future<void> pumpApp(WidgetTester tester, {required String at}) async {
+Future<FakeTmdbMovieService> pumpApp(
+  WidgetTester tester, {
+  required String at,
+  FakeTmdbMovieService? service,
+}) async {
   tester.view.physicalSize = const Size(900, 2200);
   tester.view.devicePixelRatio = 2.0;
   addTearDown(tester.view.reset);
 
+  final fake = service ?? FakeTmdbMovieService();
+
   appRouter.go(at);
   await tester.pumpWidget(
-    MaterialApp.router(theme: AppTheme.light, routerConfig: appRouter),
+    withServices(
+      fake,
+      child: MaterialApp.router(theme: AppTheme.light, routerConfig: appRouter),
+    ),
   );
   await tester.pumpAndSettle();
-  await tester.pump(loadingDelay);
+
+  return fake;
+}
+
+/// 목록에서 첫 영화의 상세 화면으로 들어간다.
+///
+/// 상세는 목록에서 받은 영화 DTO 를 extra 로 함께 넘겨받으므로,
+/// URL 로 바로 들어가지 않고 목록을 거친다.
+Future<void> openFirstMovieDetail(WidgetTester tester) async {
+  await pumpApp(tester, at: '/movies');
+  await tester.tap(find.byType(MovieCard).first);
   await tester.pumpAndSettle();
 }
 
@@ -44,7 +65,7 @@ void main() {
   tearDown(() => appRouter.go('/'));
 
   testWidgets('즐겨찾기를 누르면 아이콘이 바뀌고 Snackbar 가 뜬다', (tester) async {
-    await pumpApp(tester, at: '/movies/1');
+    await openFirstMovieDetail(tester);
 
     expect(find.byIcon(Icons.bookmark_border), findsOneWidget);
 
@@ -62,7 +83,7 @@ void main() {
   });
 
   testWidgets('평점 남기기를 누르면 Dialog 가 열리고 저장하면 Snackbar 가 뜬다', (tester) async {
-    await pumpApp(tester, at: '/movies/1');
+    await openFirstMovieDetail(tester);
 
     await tester.tap(find.widgetWithText(ElevatedButton, '평점 남기기'));
     await tester.pumpAndSettle();
@@ -89,7 +110,7 @@ void main() {
   });
 
   testWidgets('Dialog 의 초기화를 누르면 고른 별점이 지워진다', (tester) async {
-    await pumpApp(tester, at: '/movies/1');
+    await openFirstMovieDetail(tester);
 
     await tester.tap(find.widgetWithText(ElevatedButton, '평점 남기기'));
     await tester.pumpAndSettle();
@@ -103,26 +124,38 @@ void main() {
     expect(find.text('별을 눌러 선택해주세요'), findsOneWidget);
   });
 
-  testWidgets('BottomSheet 에서 장르를 여러 개 고르고 확인하면 목록에 반영된다', (tester) async {
+  testWidgets('BottomSheet 의 장르는 Genre API 결과로 채워진다', (tester) async {
     await pumpApp(tester, at: '/movies');
 
     await tester.tap(find.byIcon(Icons.filter_list));
     await tester.pumpAndSettle();
+
     expect(find.byType(GenreFilterSheet), findsOneWidget);
+    // 하드코딩한 장르가 아니라 Fake Genre API 가 돌려준 이름이 보인다.
+    expect(find.widgetWithText(CheckboxListTile, '액션'), findsOneWidget);
+    expect(find.widgetWithText(CheckboxListTile, 'SF'), findsOneWidget);
+  });
+
+  testWidgets('BottomSheet 에서 장르를 여러 개 고르면 with_genres 로 다시 조회한다',
+      (tester) async {
+    final service = await pumpApp(tester, at: '/movies');
+
+    await tester.tap(find.byIcon(Icons.filter_list));
+    await tester.pumpAndSettle();
 
     await tester.tap(find.widgetWithText(CheckboxListTile, 'SF'));
     await tester.tap(find.widgetWithText(CheckboxListTile, '애니메이션'));
     await tester.pumpAndSettle();
 
-    // 확인 전에는 URL 이 그대로다.
-    expect(appRouter.state.uri.toString(), equals('/movies'));
+    // 확인 전에는 아무 요청도 가지 않는다.
+    service.discoverCalls.clear();
 
     await tester.tap(find.widgetWithText(ElevatedButton, '2개 장르 보기'));
     await tester.pumpAndSettle();
 
     expect(find.byType(GenreFilterSheet), findsNothing);
-    final uri = appRouter.state.uri.toString();
-    expect(uri, contains('SF'));
-    expect(uri, contains('%EC%95%A0%EB%8B%88%EB%A9%94%EC%9D%B4%EC%85%98'));
+    expect(service.discoverCalls, isNotEmpty);
+    expect(service.discoverCalls.first.page, equals(1));
+    expect(service.discoverCalls.first.genreIds, equals([878, 16]));
   });
 }
