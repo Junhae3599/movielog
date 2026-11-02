@@ -4,16 +4,21 @@ import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 
 import '../data/models/tmdb_movie_dto.dart';
+import '../data/services/member_check_service.dart';
+import '../data/services/rating_api_service.dart';
 import '../data/services/tmdb_movie_service.dart';
 import '../screens/home/home_screen.dart';
 import '../screens/main_shell.dart';
 import '../screens/movie_detail/movie_detail_screen.dart';
 import '../screens/movies/movie_list_screen.dart';
+import '../screens/my_ratings/my_ratings_screen.dart';
 import '../screens/profile/profile_screen.dart';
 import '../screens/sign_up/sign_up_screen.dart';
 import '../start_screen.dart';
 import '../view_models/movie_home_view_model.dart';
 import '../view_models/movie_list_view_model.dart';
+import '../view_models/my_ratings_view_model.dart';
+import '../view_models/sign_up_view_model.dart';
 
 /// 상세 화면을 NavigationBar 위에 전체 화면으로 띄우기 위한 최상위 Navigator.
 final _rootNavigatorKey = GlobalKey<NavigatorState>();
@@ -28,7 +33,10 @@ final appRouter = GoRouter(
     ),
     GoRoute(
       path: '/sign-up',
-      builder: (context, state) => const SignUpScreen(),
+      builder: (context, state) => ChangeNotifierProvider<SignUpViewModel>(
+        create: (context) => SignUpViewModel(context.read<MemberCheckService>()),
+        child: const SignUpScreen(),
+      ),
     ),
     // 탭마다 Navigator 를 따로 두어 탭을 옮겨도 각 탭의 상태가 유지된다.
     StatefulShellRoute.indexedStack(
@@ -72,6 +80,26 @@ final appRouter = GoRouter(
             GoRoute(
               path: '/my',
               builder: (context, state) => const ProfileScreen(),
+              routes: [
+                GoRoute(
+                  // 최종 경로: /my/ratings
+                  path: 'ratings',
+                  // 지정하지 않으면 자신이 속한 ShellRoute 의 Navigator 를 쓰게 되어
+                  // 하단 NavigationBar 가 그대로 남는다. root Navigator 위에
+                  // push 해 NavigationBar 를 가린 전체 화면으로 띄운다.
+                  parentNavigatorKey: _rootNavigatorKey,
+                  builder: (context, state) =>
+                      ChangeNotifierProvider<MyRatingsViewModel>(
+                    create: (context) => MyRatingsViewModel(
+                      context.read<RatingApiService>(),
+                      context.read<TmdbMovieService>(),
+                      // 6주차는 로그인 전이므로 학습용 memberId 1 을 본다.
+                      sampleMemberId,
+                    )..load(),
+                    child: const MyRatingsScreen(),
+                  ),
+                ),
+              ],
             ),
           ],
         ),
