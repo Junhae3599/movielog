@@ -3,7 +3,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
-import 'package:movielog/data/mock_movies.dart';
 import 'package:movielog/router/app_router.dart';
 import 'package:movielog/screens/home/home_screen.dart';
 import 'package:movielog/screens/movie_detail/movie_detail_screen.dart';
@@ -14,22 +13,34 @@ import 'package:movielog/start_screen.dart';
 import 'package:movielog/theme/app_theme.dart';
 import 'package:movielog/widgets/movie_card.dart';
 
+import 'fakes/fake_tmdb_movie_service.dart';
 import 'test_helpers.dart';
 
 /// Router 를 쓰는 앱을 띄우고 원하는 위치로 이동한다.
-Future<void> pumpApp(WidgetTester tester, {String at = '/'}) async {
+///
+/// Route 안의 ViewModel 이 공용 Service 를 context.read 로 찾으므로
+/// 앱과 같은 모양으로 Provider 를 함께 올린다.
+Future<FakeTmdbMovieService> pumpApp(
+  WidgetTester tester, {
+  String at = '/',
+  FakeTmdbMovieService? service,
+}) async {
   tester.view.physicalSize = const Size(900, 2200);
   tester.view.devicePixelRatio = 2.0;
   addTearDown(tester.view.reset);
 
+  final fake = service ?? FakeTmdbMovieService();
+
   appRouter.go(at);
   await tester.pumpWidget(
-    MaterialApp.router(theme: AppTheme.light, routerConfig: appRouter),
+    withServices(
+      fake,
+      child: MaterialApp.router(theme: AppTheme.light, routerConfig: appRouter),
+    ),
   );
   await tester.pumpAndSettle();
-  // 영화 목록은 비동기로 불러오므로 Loading 이 끝날 때까지 기다린다.
-  await tester.pump(loadingDelay);
-  await tester.pumpAndSettle();
+
+  return fake;
 }
 
 void main() {
@@ -72,6 +83,14 @@ void main() {
     expect(find.byType(ProfileScreen), findsOneWidget);
   });
 
+  testWidgets('홈은 인기 영화 5개를 보여준다', (tester) async {
+    await pumpApp(tester, at: '/home');
+
+    // 추천 카드 1개 + Grid 4개 = 5개
+    expect(find.byType(MovieCard), findsNWidgets(4));
+    expect(find.text('영화 1'), findsWidgets);
+  });
+
   testWidgets('영화 카드를 누르면 상세로 가고 뒤로 돌아온다', (tester) async {
     await pumpApp(tester, at: '/movies');
 
@@ -87,24 +106,17 @@ void main() {
     expect(find.byType(MovieListScreen), findsOneWidget);
   });
 
-  testWidgets('Path Parameter 의 ID 로 해당 영화를 보여준다', (tester) async {
-    await pumpApp(tester, at: '/movies/3');
-
-    expect(find.text('속삭이는 숲'), findsWidgets);
-  });
-
-  testWidgets('장르 Chip 을 누르면 Query Parameter 로 목록을 거른다', (tester) async {
+  testWidgets('상세 경로에는 TMDB 영화 id 가 들어간다', (tester) async {
     await pumpApp(tester, at: '/movies');
-    expect(find.byType(MovieCard), findsNWidgets(movies.length));
 
-    await tester.tap(find.widgetWithText(ChoiceChip, 'SF'));
+    await tester.tap(find.byType(MovieCard).first);
     await tester.pumpAndSettle();
 
-    expect(
-      appRouter.state.uri.toString(),
-      contains('genres=SF'),
+    final detail = tester.widget<MovieDetailScreen>(
+      find.byType(MovieDetailScreen),
     );
-    final sf = movies.where((m) => m.genres.contains('SF')).length;
-    expect(find.byType(MovieCard), findsNWidgets(sf));
+    // 배열 index(0)가 아니라 TMDB 가 부여한 id 가 전달된다.
+    expect(detail.movieId, equals(detail.movie!.id));
+    expect(appRouter.state.uri.toString(), equals('/movies/${detail.movieId}'));
   });
 }

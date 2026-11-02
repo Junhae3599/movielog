@@ -1,11 +1,12 @@
 // lib/screens/home/widgets/featured_movie_card.dart
 import 'package:flutter/material.dart';
 
-import '../../../data/movie.dart';
+import '../../../data/models/tmdb_movie_dto.dart';
 import '../../../theme/app_colors.dart';
 import '../../../theme/app_text_styles.dart';
+import '../../../widgets/tmdb_poster_image.dart';
 
-/// 홈 상단의 추천 영화 카드.
+/// 홈 상단의 추천 영화 카드. 인기 영화 1위를 크게 보여준다.
 class FeaturedMovieCard extends StatelessWidget {
   const FeaturedMovieCard({
     super.key,
@@ -13,8 +14,17 @@ class FeaturedMovieCard extends StatelessWidget {
     required this.onDetailTap,
   });
 
-  final Movie movie;
+  final TmdbMovieDto movie;
   final VoidCallback onDetailTap;
+
+  /// "2024 · 평점 7.8" 처럼 있는 값만 모은다.
+  String get _subtitle {
+    final parts = <String>[
+      if (movie.releaseYear != null) '${movie.releaseYear}',
+      '평점 ${movie.voteAverage.toStringAsFixed(1)}',
+    ];
+    return parts.join(' · ');
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -27,7 +37,7 @@ class FeaturedMovieCard extends StatelessWidget {
           child: Stack(
             fit: StackFit.expand,
             children: [
-              Image.asset(movie.posterAsset, fit: BoxFit.cover),
+              TmdbPosterImage(posterPath: movie.posterPath),
               // 아래쪽 글자가 읽히도록 어둡게 덮는다.
               const DecoratedBox(
                 decoration: BoxDecoration(
@@ -55,7 +65,7 @@ class FeaturedMovieCard extends StatelessWidget {
                         borderRadius: BorderRadius.circular(16),
                       ),
                       child: Text(
-                        '추천 신작',
+                        '인기 1위',
                         style: AppTextStyles.chip.copyWith(
                           color: Colors.white,
                           fontSize: 13,
@@ -65,6 +75,8 @@ class FeaturedMovieCard extends StatelessWidget {
                     const SizedBox(height: 12),
                     Text(
                       movie.title,
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
                       style: AppTextStyles.headline.copyWith(
                         color: Colors.white,
                         fontSize: 24,
@@ -72,7 +84,7 @@ class FeaturedMovieCard extends StatelessWidget {
                     ),
                     const SizedBox(height: 4),
                     Text(
-                      '${movie.genreLabel} · ${movie.runtimeMinutes}분',
+                      _subtitle,
                       style: AppTextStyles.bodyMedium.copyWith(
                         color: Colors.white70,
                         fontSize: 14,
