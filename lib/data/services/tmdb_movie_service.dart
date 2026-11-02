@@ -2,6 +2,7 @@
 import 'package:dio/dio.dart';
 
 import '../models/tmdb_genre_dto.dart';
+import '../models/tmdb_movie_dto.dart';
 import '../models/tmdb_movie_page_dto.dart';
 
 /// TMDB 서버와 직접 통신하는 Service Layer.
@@ -48,6 +49,32 @@ class TmdbMovieService {
       },
     );
     return TmdbMoviePageDto.fromJson(response.data as Map<String, dynamic>);
+  }
+
+  /// 영화 한 편의 상세. GET /movie/{movie_id}
+  ///
+  /// 목록 API 와 달리 `results` 로 감싸지 않고 영화 객체를 그대로 돌려준다.
+  /// 평점 기록의 `movieId` 로 제목·포스터를 가져올 때 쓴다.
+  Future<TmdbMovieDto> fetchMovieDetail(int movieId) async {
+    final response = await _dio.get(
+      '/movie/$movieId',
+      queryParameters: {'language': 'ko-KR'},
+    );
+    return TmdbMovieDto.fromJson(response.data as Map<String, dynamic>);
+  }
+
+  /// [fetchMovieDetail] 과 같지만 **404 만** null 로 바꿔 돌려준다.
+  ///
+  /// TMDB 에 없는 영화(지워졌거나 잘못된 id)와 네트워크 실패는 다른 일이다.
+  /// 전자는 다시 물어도 없으므로 null 로 확정하고, 후자는 DioException 을
+  /// 그대로 올려보내 호출한 쪽이 재시도할 수 있게 한다.
+  Future<TmdbMovieDto?> findMovieById(int movieId) async {
+    try {
+      return await fetchMovieDetail(movieId);
+    } on DioException catch (error) {
+      if (error.response?.statusCode == 404) return null;
+      rethrow;
+    }
   }
 
   /// 영화의 공식 장르 목록. GET /genre/movie/list
