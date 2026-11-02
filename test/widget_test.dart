@@ -5,10 +5,11 @@ import 'package:flutter_test/flutter_test.dart';
 
 import 'package:movielog/screens/profile/profile_screen.dart';
 import 'package:movielog/screens/profile/widgets/profile_header.dart';
-import 'package:movielog/screens/sign_up/sign_up_screen.dart';
 import 'package:movielog/start_screen.dart';
 import 'package:movielog/theme/app_theme.dart';
 import 'package:movielog/widgets/stat_item.dart';
+
+import 'test_helpers.dart';
 
 Widget _wrap(Widget child) => MaterialApp(theme: AppTheme.light, home: child);
 
@@ -53,7 +54,7 @@ void main() {
         );
 
     testWidgets('입력 전에는 가입 버튼이 비활성화된다', (tester) async {
-      await tester.pumpWidget(_wrap(const SignUpScreen()));
+      await tester.pumpWidget(_wrap(signUpScreen()));
 
       expect(find.text('닉네임'), findsOneWidget);
       expect(find.text('이메일'), findsOneWidget);
@@ -62,7 +63,7 @@ void main() {
     });
 
     testWidgets('잘못된 입력에는 한국어 오류 메시지가 표시된다', (tester) async {
-      await tester.pumpWidget(_wrap(const SignUpScreen()));
+      await tester.pumpWidget(_wrap(signUpScreen()));
 
       await tester.enterText(find.byType(TextFormField).at(0), 'a');
       await tester.enterText(find.byType(TextFormField).at(1), 'test@');
@@ -76,7 +77,7 @@ void main() {
     });
 
     testWidgets('약관까지 동의해야 가입 버튼이 활성화된다', (tester) async {
-      await tester.pumpWidget(_wrap(const SignUpScreen()));
+      await tester.pumpWidget(_wrap(signUpScreen()));
 
       await tester.enterText(find.byType(TextFormField).at(0), '무비러버');
       await tester.enterText(find.byType(TextFormField).at(1), 'movie@example.com');
@@ -93,7 +94,7 @@ void main() {
     });
 
     testWidgets('비밀번호 표시 버튼으로 가림 상태가 바뀐다', (tester) async {
-      await tester.pumpWidget(_wrap(const SignUpScreen()));
+      await tester.pumpWidget(_wrap(signUpScreen()));
 
       expect(find.byIcon(Icons.visibility_off), findsOneWidget);
 
@@ -117,7 +118,7 @@ void main() {
           size: size,
           textScaler: TextScaler.linear(scale),
         ),
-        child: MaterialApp(theme: AppTheme.light, home: const SignUpScreen()),
+        child: MaterialApp(theme: AppTheme.light, home: signUpScreen()),
       ));
       await tester.pumpAndSettle();
     }
