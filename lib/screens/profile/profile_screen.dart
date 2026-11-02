@@ -1,11 +1,13 @@
 // lib/screens/profile/profile_screen.dart
 import 'package:flutter/material.dart';
+import 'package:go_router/go_router.dart';
 
 import '../../models/profile_stat.dart';
 import '../../widgets/common_app_bar.dart';
 import 'widgets/edit_profile_button.dart';
 import 'widgets/favorite_genres.dart';
 import 'widgets/profile_header.dart';
+import 'widgets/profile_menu_tile.dart';
 import 'widgets/profile_stats.dart';
 
 /// 내 프로필 화면.
@@ -48,6 +50,12 @@ class ProfileScreen extends StatelessWidget {
                 child: EditProfileButton(),
               ),
               const ProfileStats(stats: _stats),
+              // 마이페이지 위에 전체 화면으로 열리는 자식 화면이므로 push 로 띄운다.
+              // (go 로 바꾸면 뒤로가기로 마이페이지에 돌아올 수 없다)
+              ProfileMenuTile(
+                title: '내가 등록한 평점',
+                onTap: () => context.push('/my/ratings'),
+              ),
               const FavoriteGenres(genres: _genres),
             ],
           ),

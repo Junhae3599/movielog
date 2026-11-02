@@ -44,6 +44,7 @@ class FakeTmdbMovieService extends TmdbMovieService {
     this.totalPages = 3,
     this.duplicateAcrossPages = false,
     this.genreResultCount,
+    this.missingMovieIds = const {},
   }) : super(Dio());
 
   FakeTmdbMode mode;
@@ -60,7 +61,14 @@ class FakeTmdbMovieService extends TmdbMovieService {
   /// 장르를 지정했을 때 돌려줄 결과 개수. null 이면 전체와 같다.
   final int? genreResultCount;
 
+  /// 영화 상세 조회에서 404 를 돌려줄 movieId. (TMDB 에 없는 영화)
+  final Set<int> missingMovieIds;
+
   final List<DiscoverCall> discoverCalls = [];
+
+  /// 영화 상세를 조회한 movieId 기록. 같은 영화를 두 번 묻지 않는지 확인한다.
+  final List<int> movieDetailCalls = [];
+
   int popularCallCount = 0;
   int genresCallCount = 0;
 
@@ -116,6 +124,24 @@ class FakeTmdbMovieService extends TmdbMovieService {
       ),
       totalPages: hasGenre && genreResultCount != null ? 1 : totalPages,
     );
+  }
+
+  @override
+  Future<TmdbMovieDto> fetchMovieDetail(int movieId) async {
+    movieDetailCalls.add(movieId);
+    await _wait();
+    _throwIfNeeded('/movie/$movieId');
+
+    if (missingMovieIds.contains(movieId)) {
+      final options = RequestOptions(path: '/movie/$movieId');
+      throw DioException(
+        requestOptions: options,
+        type: DioExceptionType.badResponse,
+        response: Response<dynamic>(requestOptions: options, statusCode: 404),
+      );
+    }
+
+    return fakeMovie(movieId, title: '영화 $movieId');
   }
 
   @override
