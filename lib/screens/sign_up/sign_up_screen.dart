@@ -2,10 +2,14 @@
 import 'package:flutter/material.dart';
 
 import 'package:go_router/go_router.dart';
+import 'package:provider/provider.dart';
 
 import '../../theme/app_colors.dart';
+import '../../theme/app_text_styles.dart';
 import '../../validators/sign_up_validators.dart';
+import '../../view_models/sign_up_view_model.dart';
 import '../../widgets/common_app_bar.dart';
+import '../../widgets/movie_log_button.dart';
 import '../../widgets/movie_log_text_form_field.dart';
 import 'widgets/sign_up_footer.dart';
 import 'widgets/sign_up_header.dart';
@@ -13,7 +17,9 @@ import 'widgets/terms_checkbox.dart';
 
 /// 회원가입 화면.
 ///
-/// 입력값과 약관 동의 상태를 화면 안에서만 들고 있으며 API 는 연결하지 않는다.
+/// 입력값과 약관 동의 상태는 화면이 들고 있고, 닉네임·이메일 중복 확인은
+/// [SignUpViewModel] 이 맡는다. 회원가입 POST 는 v6 부터이므로 이번 주차에는
+/// 실제로 계정을 만드는 요청을 보내지 않는다.
 class SignUpScreen extends StatefulWidget {
   const SignUpScreen({super.key});
 
@@ -54,7 +60,11 @@ class _SignUpScreenState extends State<SignUpScreen> {
   }
 
   /// 버튼을 켤지 말지. Validator 와 같은 규칙을 쓴다.
-  bool get _canSubmit => SignUpValidators.canSubmit(
+  ///
+  /// 형식(Validator)과 별개로, 중복으로 확인된 값이거나 확인 중이면 켜지 않는다.
+  bool _canSubmit(SignUpViewModel viewModel) =>
+      !viewModel.isBlockedByCheck &&
+      SignUpValidators.canSubmit(
         nicknameValue: _nicknameController.text,
         emailValue: _emailController.text,
         passwordValue: _passwordController.text,
@@ -107,9 +117,12 @@ class _SignUpScreenState extends State<SignUpScreen> {
                   constraints: const BoxConstraints(
                     maxWidth: SignUpScreen.maxFormWidth,
                   ),
-                  child: isWide
-                      ? _buildForm(isWide: true)
-                      : _buildNarrowForm(constraints),
+                  // 중복 확인 결과가 바뀌면 Form 만 다시 그린다.
+                  child: Consumer<SignUpViewModel>(
+                    builder: (context, viewModel, child) => isWide
+                        ? _buildForm(viewModel, isWide: true)
+                        : _buildNarrowForm(viewModel, constraints),
+                  ),
                 ),
               ),
             );
@@ -125,14 +138,17 @@ class _SignUpScreenState extends State<SignUpScreen> {
   /// minHeight 로 화면 높이를 내려주고 IntrinsicHeight 로 확정해 줘야 한다.
   /// 넓은 화면에는 Spacer 가 없으므로 이 장치를 쓰지 않는다. IntrinsicHeight 가
   /// 잡는 예상 높이와 글꼴에 따른 실제 높이가 어긋나면 Overflow 가 난다.
-  Widget _buildNarrowForm(BoxConstraints constraints) {
+  Widget _buildNarrowForm(
+    SignUpViewModel viewModel,
+    BoxConstraints constraints,
+  ) {
     return ConstrainedBox(
       constraints: BoxConstraints(minHeight: constraints.maxHeight - 48),
-      child: IntrinsicHeight(child: _buildForm(isWide: false)),
+      child: IntrinsicHeight(child: _buildForm(viewModel, isWide: false)),
     );
   }
 
-  Widget _buildForm({required bool isWide}) {
+  Widget _buildForm(SignUpViewModel viewModel, {required bool isWide}) {
     return Form(
       key: _formKey,
       child: Column(
@@ -147,9 +163,27 @@ class _SignUpScreenState extends State<SignUpScreen> {
             hintText: '닉네임을 입력해주세요',
             controller: _nicknameController,
             validator: SignUpValidators.nickname,
+            // 형식이 맞아도 서버가 중복이라고 하면 에러 상태를 유지한다.
+            errorText: viewModel.nicknameErrorText,
+            // 입력창 바깥 오른쪽에 나란히 놓이므로 width 를 주지 않아
+            // label 길이에 맞는 내용 기반 크기를 그대로 쓴다.
+            trailing: MovieLogButton(
+              label: '중복 확인',
+              height: MovieLogTextFormField.inputHeight,
+              isLoading:
+                  viewModel.nicknameCheckStatus == CheckStatus.checking,
+              onPressed: viewModel.canCheckNickname
+                  ? () => viewModel.checkNickname(_nicknameController.text)
+                  : null,
+            ),
             nextFocusNode: _emailFocusNode,
-            onChanged: (_) => setState(() {}),
+            onChanged: (value) {
+              // 입력이 바뀌면 이전 확인 결과를 무효화한다.
+              viewModel.onNicknameChanged(value);
+              setState(() {});
+            },
           ),
+          _CheckHint(visible: viewModel.nicknameCheckStatus, label: '닉네임'),
           const SizedBox(height: 20),
           MovieLogTextFormField(
             label: '이메일',
@@ -157,10 +191,23 @@ class _SignUpScreenState extends State<SignUpScreen> {
             controller: _emailController,
             focusNode: _emailFocusNode,
             validator: SignUpValidators.email,
+            errorText: viewModel.emailErrorText,
+            trailing: MovieLogButton(
+              label: '중복 확인',
+              height: MovieLogTextFormField.inputHeight,
+              isLoading: viewModel.emailCheckStatus == CheckStatus.checking,
+              onPressed: viewModel.canCheckEmail
+                  ? () => viewModel.checkEmail(_emailController.text)
+                  : null,
+            ),
             keyboardType: TextInputType.emailAddress,
             nextFocusNode: _passwordFocusNode,
-            onChanged: (_) => setState(() {}),
+            onChanged: (value) {
+              viewModel.onEmailChanged(value);
+              setState(() {});
+            },
           ),
+          _CheckHint(visible: viewModel.emailCheckStatus, label: '이메일'),
           const SizedBox(height: 20),
           MovieLogTextFormField(
             label: '비밀번호',
@@ -179,7 +226,7 @@ class _SignUpScreenState extends State<SignUpScreen> {
                   setState(() => _obscurePassword = !_obscurePassword),
             ),
             onChanged: (_) => setState(() {}),
-            onSubmitted: _canSubmit ? _submit : null,
+            onSubmitted: _canSubmit(viewModel) ? _submit : null,
           ),
           // 좁은 화면에서는 약관과 버튼을 아래로 밀어 붙인다.
           if (isWide) const SizedBox(height: 32) else const Spacer(),
@@ -188,14 +235,38 @@ class _SignUpScreenState extends State<SignUpScreen> {
             onChanged: (value) => setState(() => _agreedToTerms = value),
           ),
           const SizedBox(height: 16),
-          ElevatedButton(
-            // null 이면 버튼이 비활성화되고 테마의 disabled 색이 쓰인다.
-            onPressed: _canSubmit ? _submit : null,
-            child: const Text('가입하기'),
+          // Form 맨 아래 버튼은 화면 전체 너비를 쓴다.
+          MovieLogButton(
+            label: '가입하기',
+            width: double.infinity,
+            onPressed: _canSubmit(viewModel) ? _submit : null,
           ),
           const SizedBox(height: 24),
           const SignUpFooter(),
         ],
+      ),
+    );
+  }
+}
+
+/// 중복 확인에 성공했을 때만 입력창 아래에 뜨는 안내 문구.
+///
+/// 에러 문구는 입력창의 errorText 가 맡으므로 여기서는 성공만 알린다.
+class _CheckHint extends StatelessWidget {
+  const _CheckHint({required this.visible, required this.label});
+
+  final CheckStatus visible;
+  final String label;
+
+  @override
+  Widget build(BuildContext context) {
+    if (visible != CheckStatus.available) return const SizedBox.shrink();
+
+    return Padding(
+      padding: const EdgeInsets.only(top: 6, left: 4),
+      child: Text(
+        '사용할 수 있는 $label입니다.',
+        style: AppTextStyles.label.copyWith(color: AppColors.violet),
       ),
     );
   }
