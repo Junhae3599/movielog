@@ -7,11 +7,12 @@ import 'package:movielog/view_models/my_ratings_view_model.dart';
 import 'fakes/fake_rating_api_service.dart';
 import 'fakes/fake_tmdb_movie_service.dart';
 import 'fakes/movie_log_fixtures.dart';
+import 'test_helpers.dart';
 
 MyRatingsViewModel buildViewModel({
   FakeRatingApiService? ratingService,
   FakeTmdbMovieService? movieService,
-  int memberId = sampleMemberId,
+  int memberId = testMemberId,
 }) {
   return MyRatingsViewModel(
     ratingService ?? FakeRatingApiService(),
@@ -21,12 +22,12 @@ MyRatingsViewModel buildViewModel({
 }
 
 void main() {
-  test('조회 대상은 학습용 memberId 1 이다', () async {
+  test('조회 대상은 생성자로 받은 학습용 memberId 다', () async {
     final service = FakeRatingApiService();
     await buildViewModel(ratingService: service).load();
 
-    expect(sampleMemberId, equals(1));
-    expect(service.fetchCalls, equals([1]));
+    // 6주차의 고정 상수 1 이 아니라 가입 결과로 받은 id 로 묻는다.
+    expect(service.fetchCalls, equals([testMemberId]));
   });
 
   group('네 가지 상태', () {

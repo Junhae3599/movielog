@@ -4,12 +4,12 @@ import 'package:flutter_test/flutter_test.dart';
 
 import 'package:movielog/view_models/sign_up_view_model.dart';
 
-import 'fakes/fake_member_check_service.dart';
+import 'fakes/fake_sign_up_service.dart';
 
 void main() {
   group('중복 확인 상태', () {
     test('available: true 면 사용 가능 상태가 되고 에러 문구가 없다', () async {
-      final service = FakeMemberCheckService();
+      final service = FakeSignUpService();
       final viewModel = SignUpViewModel(service);
 
       expect(viewModel.nicknameCheckStatus, equals(CheckStatus.idle));
@@ -24,7 +24,7 @@ void main() {
 
     test('available: false 면 중복 상태가 되고 버튼을 더 누를 수 없다', () async {
       final viewModel = SignUpViewModel(
-        FakeMemberCheckService(nicknameMode: FakeCheckMode.duplicated),
+        FakeSignUpService(nicknameMode: FakeCheckMode.duplicated),
       );
 
       viewModel.onNicknameChanged('무비러버');
@@ -37,13 +37,13 @@ void main() {
 
     test('통신 실패와 정상 중복 응답은 다른 상태·문구로 구분된다', () async {
       final duplicated = SignUpViewModel(
-        FakeMemberCheckService(nicknameMode: FakeCheckMode.duplicated),
+        FakeSignUpService(nicknameMode: FakeCheckMode.duplicated),
       );
       duplicated.onNicknameChanged('무비러버');
       await duplicated.checkNickname('무비러버');
 
       final failed = SignUpViewModel(
-        FakeMemberCheckService(nicknameMode: FakeCheckMode.failure),
+        FakeSignUpService(nicknameMode: FakeCheckMode.failure),
       );
       failed.onNicknameChanged('무비러버');
       await failed.checkNickname('무비러버');
@@ -60,7 +60,7 @@ void main() {
 
     test('통신 중에는 checking 상태가 되고 버튼을 누를 수 없다', () async {
       final viewModel = SignUpViewModel(
-        FakeMemberCheckService(delay: const Duration(milliseconds: 50)),
+        FakeSignUpService(delay: const Duration(milliseconds: 50)),
       );
 
       viewModel.onNicknameChanged('무비러버');
@@ -74,7 +74,7 @@ void main() {
     });
 
     test('빈 값으로는 요청을 보내지 않는다', () async {
-      final service = FakeMemberCheckService();
+      final service = FakeSignUpService();
       final viewModel = SignUpViewModel(service);
 
       viewModel.onNicknameChanged('   ');
@@ -87,7 +87,7 @@ void main() {
 
   group('입력 변경 시 무효화', () {
     test('입력을 바꾸면 이전 확인 결과가 idle 로 돌아간다', () async {
-      final viewModel = SignUpViewModel(FakeMemberCheckService());
+      final viewModel = SignUpViewModel(FakeSignUpService());
 
       viewModel.onNicknameChanged('무비러버');
       await viewModel.checkNickname('무비러버');
@@ -101,7 +101,7 @@ void main() {
     });
 
     test('중복이었던 값을 다시 입력하면 재요청 없이 바로 에러가 된다', () async {
-      final service = FakeMemberCheckService(
+      final service = FakeSignUpService(
         nicknameMode: FakeCheckMode.duplicated,
       );
       final viewModel = SignUpViewModel(service);
@@ -124,7 +124,7 @@ void main() {
     });
 
     test('앞뒤 공백만 다른 값은 같은 값으로 본다', () async {
-      final service = FakeMemberCheckService(
+      final service = FakeSignUpService(
         nicknameMode: FakeCheckMode.duplicated,
       );
       final viewModel = SignUpViewModel(service);
@@ -140,7 +140,7 @@ void main() {
 
     test('응답을 기다리는 동안 입력이 바뀌면 그 응답을 버린다', () async {
       final viewModel = SignUpViewModel(
-        FakeMemberCheckService(delay: const Duration(milliseconds: 50)),
+        FakeSignUpService(delay: const Duration(milliseconds: 50)),
       );
 
       viewModel.onNicknameChanged('무비러버');
@@ -158,7 +158,7 @@ void main() {
   group('닉네임과 이메일은 서로 영향을 주지 않는다', () {
     test('닉네임이 중복이어도 이메일 상태는 그대로다', () async {
       final viewModel = SignUpViewModel(
-        FakeMemberCheckService(
+        FakeSignUpService(
           nicknameMode: FakeCheckMode.duplicated,
           emailMode: FakeCheckMode.available,
         ),
@@ -177,7 +177,7 @@ void main() {
 
     test('한쪽이라도 중복이거나 확인 중이면 가입을 막는다', () async {
       final viewModel = SignUpViewModel(
-        FakeMemberCheckService(emailMode: FakeCheckMode.duplicated),
+        FakeSignUpService(emailMode: FakeCheckMode.duplicated),
       );
 
       expect(viewModel.isBlockedByCheck, isFalse);
@@ -191,7 +191,7 @@ void main() {
 
   test('dispose 뒤에 도착한 응답은 상태를 건드리지 않는다', () async {
     final viewModel = SignUpViewModel(
-      FakeMemberCheckService(delay: const Duration(milliseconds: 50)),
+      FakeSignUpService(delay: const Duration(milliseconds: 50)),
     );
 
     viewModel.onNicknameChanged('무비러버');

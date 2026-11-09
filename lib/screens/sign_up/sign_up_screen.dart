@@ -4,10 +4,13 @@ import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 
+import '../../data/models/create_member_request.dart';
 import '../../theme/app_colors.dart';
 import '../../theme/app_text_styles.dart';
 import '../../validators/sign_up_validators.dart';
+import '../../view_models/learning_member_session.dart';
 import '../../view_models/sign_up_view_model.dart';
+import '../../view_models/submit_status.dart';
 import '../../widgets/common_app_bar.dart';
 import '../../widgets/movie_log_button.dart';
 import '../../widgets/movie_log_text_form_field.dart';
@@ -17,9 +20,13 @@ import 'widgets/terms_checkbox.dart';
 
 /// 회원가입 화면.
 ///
-/// 입력값과 약관 동의 상태는 화면이 들고 있고, 닉네임·이메일 중복 확인은
-/// [SignUpViewModel] 이 맡는다. 회원가입 POST 는 v6 부터이므로 이번 주차에는
-/// 실제로 계정을 만드는 요청을 보내지 않는다.
+/// 입력값과 약관 동의 상태는 화면이 들고 있고, 중복 확인과 회원가입 POST 는
+/// [SignUpViewModel] 이 맡는다.
+///
+/// 가입이 성공하면 응답의 memberId 를 [LearningMemberSession] 에 옮겨 담는다.
+/// 이후 영화 상세·마이페이지가 그 값으로 평점 경로를 만든다.
+/// 실패는 **목적지가 다르다.** 비밀번호 형식 400 은 비밀번호 입력칸의 errorText,
+/// 그 밖의 400·409(최종 중복)는 화면 Snackbar 다.
 class SignUpScreen extends StatefulWidget {
   const SignUpScreen({super.key});
 
@@ -61,8 +68,10 @@ class _SignUpScreenState extends State<SignUpScreen> {
 
   /// 버튼을 켤지 말지. Validator 와 같은 규칙을 쓴다.
   ///
-  /// 형식(Validator)과 별개로, 중복으로 확인된 값이거나 확인 중이면 켜지 않는다.
+  /// 형식(Validator)과 별개로 **닉네임·이메일 중복 확인이 모두 통과**해야 하고,
+  /// 확인 중이거나 제출 중이면 켜지 않는다. (7주차 Required)
   bool _canSubmit(SignUpViewModel viewModel) =>
+      viewModel.isCheckPassed &&
       !viewModel.isBlockedByCheck &&
       SignUpValidators.canSubmit(
         nicknameValue: _nicknameController.text,
@@ -71,7 +80,7 @@ class _SignUpScreenState extends State<SignUpScreen> {
         agreedToTerms: _agreedToTerms,
       );
 
-  void _submit() {
+  Future<void> _submit() async {
     // 버튼 활성화 조건과 별개로, 누를 때 Form 전체를 다시 검증한다.
     final isValid = _formKey.currentState?.validate() ?? false;
     if (!isValid) return;
@@ -79,12 +88,40 @@ class _SignUpScreenState extends State<SignUpScreen> {
     // SnackBar 가 키보드에 가려지지 않도록 먼저 닫는다.
     FocusScope.of(context).unfocus();
 
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('가입이 완료되었습니다.')),
+    final viewModel = context.read<SignUpViewModel>();
+    await viewModel.submit(
+      CreateMemberRequest(
+        email: _emailController.text,
+        password: _passwordController.text,
+        nickname: _nicknameController.text,
+      ),
     );
 
-    // go 는 스택을 교체하므로 홈에서 회원가입으로 돌아갈 수 없다.
-    context.go('/home');
+    // 요청과 화면 전환은 서로 다른 비동기 경계다. await 뒤에는 이 화면이 아직
+    // 살아 있는지 다시 확인한다.
+    if (!mounted) return;
+
+    if (viewModel.submitStatus == SubmitStatus.success &&
+        viewModel.createdMemberId != null) {
+      context.read<LearningMemberSession>().setMemberId(
+            viewModel.createdMemberId!,
+          );
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('가입이 완료되었습니다.')),
+      );
+      // go 는 스택을 교체하므로 가입한 뒤 회원가입 화면으로 돌아갈 수 없다.
+      context.go('/movies');
+      return;
+    }
+
+    // 입력칸에 붙지 않는 오류만 Snackbar 로 알린다. (비밀번호 400 은 errorText)
+    final message = viewModel.consumeSnackbarMessage();
+    if (message == null) return;
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text(message)),
+    );
   }
 
   @override
@@ -94,39 +131,44 @@ class _SignUpScreenState extends State<SignUpScreen> {
     final isWide =
         MediaQuery.sizeOf(context).width >= SignUpScreen.wideBreakpoint;
 
-    return Scaffold(
-      // 회원가입에서는 뒤로 갈 곳이 없으므로 뒤로가기 버튼을 두지 않는다.
-      appBar: isWide
-          ? null
-          : const CommonAppBar(title: '회원가입', centerTitle: true),
-      body: SafeArea(
-        // Form 이 실제로 쓸 수 있는 공간은 SafeArea 를 지난 뒤에 정해진다.
-        child: LayoutBuilder(
-          builder: (context, constraints) {
-            // 내용이 짧으면 Center 가 세로 가운데로 모으고,
-            // 길면 SingleChildScrollView 가 화면을 채우며 스크롤된다.
-            return Center(
-              child: SingleChildScrollView(
-                // 목록을 끌어내리면 키보드가 닫힌다.
-                keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 16,
-                  vertical: 24,
-                ),
-                child: ConstrainedBox(
-                  constraints: const BoxConstraints(
-                    maxWidth: SignUpScreen.maxFormWidth,
+    // 제출 중에는 뒤로가기·스와이프 백으로 화면을 벗어날 수 없다. 요청이 서버에
+    // 도착했는데 결과를 반영할 화면이 사라지는 것을 막는다. (Challenge)
+    return PopScope(
+      canPop: !context.select<SignUpViewModel, bool>((vm) => vm.isSubmitting),
+      child: Scaffold(
+        // 회원가입에서는 뒤로 갈 곳이 없으므로 뒤로가기 버튼을 두지 않는다.
+        appBar: isWide
+            ? null
+            : const CommonAppBar(title: '회원가입', centerTitle: true),
+        body: SafeArea(
+          // Form 이 실제로 쓸 수 있는 공간은 SafeArea 를 지난 뒤에 정해진다.
+          child: LayoutBuilder(
+            builder: (context, constraints) {
+              // 내용이 짧으면 Center 가 세로 가운데로 모으고,
+              // 길면 SingleChildScrollView 가 화면을 채우며 스크롤된다.
+              return Center(
+                child: SingleChildScrollView(
+                  // 목록을 끌어내리면 키보드가 닫힌다.
+                  keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 16,
+                    vertical: 24,
                   ),
-                  // 중복 확인 결과가 바뀌면 Form 만 다시 그린다.
-                  child: Consumer<SignUpViewModel>(
-                    builder: (context, viewModel, child) => isWide
-                        ? _buildForm(viewModel, isWide: true)
-                        : _buildNarrowForm(viewModel, constraints),
+                  child: ConstrainedBox(
+                    constraints: const BoxConstraints(
+                      maxWidth: SignUpScreen.maxFormWidth,
+                    ),
+                    // 중복 확인 결과가 바뀌면 Form 만 다시 그린다.
+                    child: Consumer<SignUpViewModel>(
+                      builder: (context, viewModel, child) => isWide
+                          ? _buildForm(viewModel, isWide: true)
+                          : _buildNarrowForm(viewModel, constraints),
+                    ),
                   ),
                 ),
-              ),
-            );
-          },
+              );
+            },
+          ),
         ),
       ),
     );
@@ -215,6 +257,9 @@ class _SignUpScreenState extends State<SignUpScreen> {
             controller: _passwordController,
             focusNode: _passwordFocusNode,
             validator: SignUpValidators.password,
+            // 로컬 validator 가 통과한 뒤에도 서버가 거부한 값이면 계속 에러로
+            // 보이도록 ViewModel 의 문구를 errorText 에 연결한다.
+            errorText: viewModel.passwordErrorText,
             obscureText: _obscurePassword,
             suffixIcon: IconButton(
               icon: Icon(
@@ -225,7 +270,11 @@ class _SignUpScreenState extends State<SignUpScreen> {
               onPressed: () =>
                   setState(() => _obscurePassword = !_obscurePassword),
             ),
-            onChanged: (_) => setState(() {}),
+            onChanged: (_) {
+              // 값이 바뀌면 서버가 돌려준 400 문구를 지운다.
+              viewModel.onPasswordChanged();
+              setState(() {});
+            },
             onSubmitted: _canSubmit(viewModel) ? _submit : null,
           ),
           // 좁은 화면에서는 약관과 버튼을 아래로 밀어 붙인다.
@@ -239,6 +288,7 @@ class _SignUpScreenState extends State<SignUpScreen> {
           MovieLogButton(
             label: '가입하기',
             width: double.infinity,
+            isLoading: viewModel.isSubmitting,
             onPressed: _canSubmit(viewModel) ? _submit : null,
           ),
           const SizedBox(height: 24),

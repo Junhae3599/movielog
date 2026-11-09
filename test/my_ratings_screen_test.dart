@@ -40,6 +40,8 @@ Future<void> openMyRatings(
     withServices(
       movieService ?? FakeTmdbMovieService(),
       ratingApiService: ratingService ?? FakeRatingApiService(),
+      // 7주차 평점 화면은 가입 결과로 받은 memberId 가 있어야 열린다.
+      memberId: testMemberId,
       child: MaterialApp.router(theme: AppTheme.light, routerConfig: appRouter),
     ),
   );
@@ -131,7 +133,7 @@ void main() {
 
     expect(find.byType(MyRatingsError), findsOneWidget);
     expect(find.text('존재하지 않는 회원입니다.'), findsOneWidget);
-    expect(service.fetchCalls, equals([1]));
+    expect(service.fetchCalls, equals([testMemberId]));
 
     // 다시 시도 버튼은 고정 너비(160)를 쓴다.
     final retry = tester.widget<MovieLogButton>(
@@ -143,7 +145,7 @@ void main() {
     await tester.tap(find.text('다시 시도'));
     await tester.pumpAndSettle();
 
-    expect(service.fetchCalls, equals([1, 1]));
+    expect(service.fetchCalls, equals([testMemberId, testMemberId]));
     expect(find.byType(RatingCard), findsNWidgets(3));
   });
 

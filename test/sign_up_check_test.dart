@@ -9,7 +9,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:movielog/theme/app_theme.dart';
 import 'package:movielog/widgets/movie_log_button.dart';
 
-import 'fakes/fake_member_check_service.dart';
+import 'fakes/fake_sign_up_service.dart';
 import 'test_helpers.dart';
 
 // 화면의 MovieLogButton 은 등장 순서대로 닉네임 확인 / 이메일 확인 / 가입하기다.
@@ -21,15 +21,15 @@ Finder get nicknameCheckButton => find.byType(MovieLogButton).at(0);
 Finder get emailCheckButton => find.byType(MovieLogButton).at(1);
 Finder get submitButton => find.byType(MovieLogButton).at(2);
 
-Future<FakeMemberCheckService> pumpSignUp(
+Future<FakeSignUpService> pumpSignUp(
   WidgetTester tester, {
-  FakeMemberCheckService? service,
+  FakeSignUpService? service,
 }) async {
   tester.view.physicalSize = const Size(900, 2200);
   tester.view.devicePixelRatio = 2.0;
   addTearDown(tester.view.reset);
 
-  final fake = service ?? FakeMemberCheckService();
+  final fake = service ?? FakeSignUpService();
   await tester.pumpWidget(
     MaterialApp(theme: AppTheme.light, home: signUpScreen(service: fake)),
   );
@@ -61,7 +61,7 @@ void main() {
   testWidgets('통신 중 — 버튼이 비활성화되고 인디케이터만 보인다', (tester) async {
     await pumpSignUp(
       tester,
-      service: FakeMemberCheckService(delay: loadingDelay),
+      service: FakeSignUpService(delay: loadingDelay),
     );
 
     await checkNickname(tester, '무비러버');
@@ -101,7 +101,7 @@ void main() {
   testWidgets('중복 — 입력창이 에러 상태가 되고 버튼이 비활성화된다', (tester) async {
     await pumpSignUp(
       tester,
-      service: FakeMemberCheckService(nicknameMode: FakeCheckMode.duplicated),
+      service: FakeSignUpService(nicknameMode: FakeCheckMode.duplicated),
     );
 
     await checkNickname(tester, '무비러버');
@@ -123,7 +123,7 @@ void main() {
   testWidgets('통신 실패 — 중복과 다른 문구를 보여준다', (tester) async {
     await pumpSignUp(
       tester,
-      service: FakeMemberCheckService(nicknameMode: FakeCheckMode.failure),
+      service: FakeSignUpService(nicknameMode: FakeCheckMode.failure),
     );
 
     await checkNickname(tester, '무비러버');
@@ -149,7 +149,7 @@ void main() {
   testWidgets('중복이었던 값을 다시 입력하면 재요청 없이 바로 에러가 된다', (tester) async {
     final service = await pumpSignUp(
       tester,
-      service: FakeMemberCheckService(nicknameMode: FakeCheckMode.duplicated),
+      service: FakeSignUpService(nicknameMode: FakeCheckMode.duplicated),
     );
 
     await checkNickname(tester, '무비러버');
@@ -170,7 +170,7 @@ void main() {
   testWidgets('닉네임 결과가 이메일 입력란에 영향을 주지 않는다', (tester) async {
     await pumpSignUp(
       tester,
-      service: FakeMemberCheckService(
+      service: FakeSignUpService(
         nicknameMode: FakeCheckMode.duplicated,
         emailMode: FakeCheckMode.available,
       ),
@@ -195,7 +195,7 @@ void main() {
   testWidgets('중복인 값으로는 가입 버튼이 켜지지 않는다', (tester) async {
     await pumpSignUp(
       tester,
-      service: FakeMemberCheckService(nicknameMode: FakeCheckMode.duplicated),
+      service: FakeSignUpService(nicknameMode: FakeCheckMode.duplicated),
     );
 
     await checkNickname(tester, '무비러버');
@@ -205,7 +205,7 @@ void main() {
       find.byType(TextFormField).at(1),
       'movie@example.com',
     );
-    await tester.enterText(find.byType(TextFormField).at(2), 'password123');
+    await tester.enterText(find.byType(TextFormField).at(2), 'Password123!');
     await tester.tap(find.byType(Checkbox));
     await tester.pumpAndSettle();
 

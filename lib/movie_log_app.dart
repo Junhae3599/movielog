@@ -4,18 +4,19 @@ import 'package:provider/provider.dart';
 
 import 'core/network/movie_log_client.dart';
 import 'core/network/tmdb_client.dart';
-import 'data/services/member_check_service.dart';
 import 'data/services/rating_api_service.dart';
+import 'data/services/sign_up_service.dart';
 import 'data/services/tmdb_movie_service.dart';
 import 'router/app_router.dart';
 import 'theme/app_theme.dart';
+import 'view_models/learning_member_session.dart';
 
 class MovieLogApp extends StatelessWidget {
   const MovieLogApp({super.key});
 
   @override
   Widget build(BuildContext context) {
-    // MemberCheckService 와 RatingApiService 는 같은 백엔드를 부르므로
+    // SignUpService 와 RatingApiService 는 같은 백엔드를 부르므로
     // Client 하나를 공유한다. TMDB Client 와는 끝까지 분리한다.
     final movieLogClient = createMovieLogClient();
 
@@ -32,11 +33,16 @@ class MovieLogApp extends StatelessWidget {
         Provider<TmdbMovieService>(
           create: (_) => TmdbMovieService(createTmdbClient()),
         ),
-        Provider<MemberCheckService>(
-          create: (_) => MemberCheckService(movieLogClient),
+        Provider<SignUpService>(
+          create: (_) => SignUpService(movieLogClient),
         ),
         Provider<RatingApiService>(
           create: (_) => RatingApiService(movieLogClient),
+        ),
+        // 회원가입 결과(memberId)를 여러 화면이 함께 읽으므로 root 에 둔다.
+        // 화면별 ViewModel 과 달리 화면이 바뀌어도 유지되어야 한다.
+        ChangeNotifierProvider<LearningMemberSession>(
+          create: (_) => LearningMemberSession(),
         ),
       ],
       child: MaterialApp.router(

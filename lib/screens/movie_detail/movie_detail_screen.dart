@@ -2,28 +2,30 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_rating_bar/flutter_rating_bar.dart';
 import 'package:go_router/go_router.dart';
+import 'package:provider/provider.dart';
 
 import '../../data/models/tmdb_movie_dto.dart';
 import '../../theme/app_colors.dart';
 import '../../theme/app_text_styles.dart';
+import '../../view_models/movie_detail_view_model.dart';
+import '../../view_models/submit_status.dart';
 import '../../widgets/common_app_bar.dart';
+import '../../widgets/rating_dialog.dart';
 import '../../widgets/tmdb_poster_image.dart';
-import 'widgets/rating_dialog.dart';
 
 /// 영화 상세 화면.
 ///
-/// 경로에는 **TMDB 가 부여한 영화 id** 가 들어 있고, 목록에서 넘어올 때는
-/// 이미 받아 둔 [TmdbMovieDto] 를 extra 로 함께 받아 다시 요청하지 않는다.
+/// 보여줄 영화와 평점 등록 상태는 [MovieDetailViewModel] 이 들고 있고,
+/// 그 ViewModel 은 상위의 `MovieDetailLoader` 가 만든다.
 ///
-/// [movieId] 는 6주차에 평점을 저장할 때 자체 백엔드의 `movieId` 로 그대로 전달된다.
-/// 목록 배열의 index 를 쓰면 정렬·필터가 바뀔 때 다른 영화를 가리키게 된다.
+/// 이 화면이 하는 쓰기는 **평점 등록 하나**다. 조회·수정·삭제는 마이페이지의
+/// "내가 등록한 평점" 화면에서 한다. 등록 결과는 같은 화면의 Snackbar 로 알리고,
+/// 실제로 저장됐는지는 그 화면에서 다시 조회해 확인한다.
+///
+/// 평점 요청의 `movieId` 는 **TMDB 가 부여한 영화 id** 다. 목록 배열의 index 를
+/// 쓰면 정렬·필터가 바뀔 때 다른 영화에 평점이 달린다.
 class MovieDetailScreen extends StatefulWidget {
-  const MovieDetailScreen({super.key, required this.movieId, this.movie});
-
-  final int? movieId;
-
-  /// 목록에서 넘겨준 영화 정보. URL 로 직접 들어온 경우에는 null 이다.
-  final TmdbMovieDto? movie;
+  const MovieDetailScreen({super.key});
 
   @override
   State<MovieDetailScreen> createState() => _MovieDetailScreenState();
@@ -31,9 +33,6 @@ class MovieDetailScreen extends StatefulWidget {
 
 class _MovieDetailScreenState extends State<MovieDetailScreen> {
   bool _isFavorite = false;
-
-  /// 내가 남긴 평점. 아직 없으면 null.
-  double? _myRating;
 
   void _toggleFavorite() {
     setState(() => _isFavorite = !_isFavorite);
@@ -47,49 +46,41 @@ class _MovieDetailScreenState extends State<MovieDetailScreen> {
       );
   }
 
-  Future<void> _openRatingDialog(TmdbMovieDto movie) async {
-    final rating = await showDialog<double>(
+  /// 평점 Dialog 를 열고, 저장까지 끝난 뒤에만 Snackbar 를 띄운다.
+  Future<void> _openRatingDialog(MovieDetailViewModel viewModel) async {
+    final saved = await showDialog<bool>(
       context: context,
+      // 저장 중 바깥 탭으로 닫히는 것도 막는다. (PopScope 는 뒤로가기만 막는다)
+      barrierDismissible: false,
       builder: (_) => RatingDialog(
-        movieTitle: movie.title,
-        initialRating: _myRating,
+        movieTitle: viewModel.movie.title,
+        onSubmit: (score, comment) async {
+          await viewModel.createRating(score: score, comment: comment);
+          // 실패를 예외로 바꿔 Dialog 가 닫히지 않고 다시 시도할 수 있게 한다.
+          if (viewModel.submitStatus != SubmitStatus.success) {
+            throw StateError(viewModel.submitMessage ?? '저장에 실패했습니다.');
+          }
+        },
       ),
     );
 
-    if (rating == null || !mounted) return;
-
-    setState(() => _myRating = rating);
-
-    // 6주차에 POST /ratings 로 보낼 값. movieId 는 TMDB id 를 그대로 쓴다.
-    debugPrint(
-      '[평점 입력] movieId=${movie.id} score=${rating.toStringAsFixed(1)}',
-    );
+    // 저장 요청과 Snackbar 는 서로 다른 비동기 경계다. await 뒤에는 화면이
+    // 아직 살아 있는지 다시 확인한다.
+    if (!mounted || saved != true) return;
 
     ScaffoldMessenger.of(context)
       ..hideCurrentSnackBar()
       ..showSnackBar(
-        SnackBar(content: Text('평점 ${rating.toStringAsFixed(1)}점을 남겼어요.')),
+        const SnackBar(
+          content: Text('평점을 등록했습니다. 마이페이지의 "내가 등록한 평점"에서 확인할 수 있습니다.'),
+        ),
       );
   }
 
   @override
   Widget build(BuildContext context) {
-    final movie = widget.movie;
-
-    // 목록을 거치지 않고 URL 로 바로 들어온 경우에도 화면이 깨지지 않게 한다.
-    // (영화 상세 조회 API 연동은 이후 주차 과제다)
-    if (movie == null) {
-      return Scaffold(
-        appBar: CommonAppBar(
-          title: '영화 상세',
-          centerTitle: true,
-          onBack: () => context.pop(),
-        ),
-        body: Center(
-          child: Text('영화 정보를 찾을 수 없어요.', style: AppTextStyles.bodyMedium),
-        ),
-      );
-    }
+    // 영화 정보는 바뀌지 않으므로 read 로 한 번만 읽는다.
+    final movie = context.read<MovieDetailViewModel>().movie;
 
     return Scaffold(
       appBar: CommonAppBar(
@@ -113,7 +104,10 @@ class _MovieDetailScreenState extends State<MovieDetailScreen> {
           ),
           Padding(
             padding: const EdgeInsets.fromLTRB(16, 20, 16, 0),
-            child: _MovieInfo(movie: movie, myRating: _myRating),
+            child: Consumer<MovieDetailViewModel>(
+              builder: (context, viewModel, child) =>
+                  _MovieInfo(movie: movie, myScore: viewModel.submittedScore),
+            ),
           ),
           const Divider(height: 40, thickness: 8, color: AppColors.cardFill),
           Padding(
@@ -156,13 +150,20 @@ class _MovieDetailScreenState extends State<MovieDetailScreen> {
               ),
               const SizedBox(width: 12),
               Expanded(
-                child: ElevatedButton.icon(
-                  onPressed: () => _openRatingDialog(movie),
-                  icon: const Icon(Icons.rate_review_outlined, size: 20),
-                  label: const Text('평점 남기기'),
-                  style: ElevatedButton.styleFrom(
-                    minimumSize: const Size(0, 52),
-                    shape: const StadiumBorder(),
+                // 가입 전에는 평점을 쓸 회원이 없으므로 버튼을 잠그고 안내한다.
+                child: Consumer<MovieDetailViewModel>(
+                  builder: (context, viewModel, child) => ElevatedButton.icon(
+                    onPressed: viewModel.canSubmit
+                        ? () => _openRatingDialog(viewModel)
+                        : null,
+                    icon: const Icon(Icons.rate_review_outlined, size: 20),
+                    label: Text(
+                      viewModel.canSubmit ? '평점 남기기' : '회원가입 후 가능',
+                    ),
+                    style: ElevatedButton.styleFrom(
+                      minimumSize: const Size(0, 52),
+                      shape: const StadiumBorder(),
+                    ),
                   ),
                 ),
               ),
@@ -176,10 +177,12 @@ class _MovieDetailScreenState extends State<MovieDetailScreen> {
 
 /// 제목, 개봉 연도, 평균 평점을 보여주는 영역.
 class _MovieInfo extends StatelessWidget {
-  const _MovieInfo({required this.movie, required this.myRating});
+  const _MovieInfo({required this.movie, required this.myScore});
 
   final TmdbMovieDto movie;
-  final double? myRating;
+
+  /// 이번 화면에서 방금 등록한 점수. 아직 등록하지 않았으면 null 이다.
+  final int? myScore;
 
   @override
   Widget build(BuildContext context) {
@@ -212,10 +215,10 @@ class _MovieInfo extends StatelessWidget {
             ),
           ],
         ),
-        if (myRating != null) ...[
+        if (myScore != null) ...[
           const SizedBox(height: 8),
           Text(
-            '내 평점 ${myRating!.toStringAsFixed(1)}점',
+            '내 평점 $myScore점',
             style: AppTextStyles.bodyMedium.copyWith(
               fontSize: 14,
               color: AppColors.violet,

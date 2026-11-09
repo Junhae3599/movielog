@@ -7,6 +7,7 @@ import 'package:movielog/screens/profile/profile_screen.dart';
 import 'package:movielog/screens/profile/widgets/profile_header.dart';
 import 'package:movielog/start_screen.dart';
 import 'package:movielog/theme/app_theme.dart';
+import 'package:movielog/widgets/movie_log_button.dart';
 import 'package:movielog/widgets/stat_item.dart';
 
 import 'test_helpers.dart';
@@ -76,21 +77,42 @@ void main() {
       expect(submitButton(tester).onPressed, isNull);
     });
 
-    testWidgets('약관까지 동의해야 가입 버튼이 활성화된다', (tester) async {
+    testWidgets('중복 확인과 약관까지 모두 통과해야 가입 버튼이 활성화된다', (tester) async {
       await tester.pumpWidget(_wrap(signUpScreen()));
 
       await tester.enterText(find.byType(TextFormField).at(0), '무비러버');
       await tester.enterText(find.byType(TextFormField).at(1), 'movie@example.com');
-      await tester.enterText(find.byType(TextFormField).at(2), 'password123');
-      await tester.pumpAndSettle();
-
-      // 입력은 모두 유효하지만 약관에 동의하기 전까지는 비활성화다.
-      expect(submitButton(tester).onPressed, isNull);
-
+      await tester.enterText(find.byType(TextFormField).at(2), 'Password123!');
       await tester.tap(find.byType(Checkbox));
       await tester.pumpAndSettle();
 
+      // 형식과 약관을 통과했어도 중복 확인을 하지 않았으면 켜지지 않는다.
+      expect(submitButton(tester).onPressed, isNull);
+
+      // 등장 순서: 닉네임 확인 / 이메일 확인 / 가입하기
+      await tester.tap(find.byType(MovieLogButton).at(0));
+      await tester.pumpAndSettle();
+      // 한쪽만 확인해도 아직 켜지지 않는다.
+      expect(submitButton(tester).onPressed, isNull);
+
+      await tester.tap(find.byType(MovieLogButton).at(1));
+      await tester.pumpAndSettle();
+
       expect(submitButton(tester).onPressed, isNotNull);
+    });
+
+    testWidgets('비밀번호 문자 조합이 모자라면 오류를 보여준다', (tester) async {
+      await tester.pumpWidget(_wrap(signUpScreen()));
+
+      // 8자를 넘겼지만 소문자뿐이다. 서버 제약과 같은 규칙으로 미리 막는다.
+      await tester.enterText(find.byType(TextFormField).at(2), 'onlylower');
+      await tester.pumpAndSettle();
+
+      expect(
+        find.textContaining('소문자·대문자·숫자·특수문자'),
+        findsOneWidget,
+      );
+      expect(submitButton(tester).onPressed, isNull);
     });
 
     testWidgets('비밀번호 표시 버튼으로 가림 상태가 바뀐다', (tester) async {
