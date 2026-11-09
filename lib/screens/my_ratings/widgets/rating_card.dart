@@ -10,10 +10,31 @@ import '../../../widgets/tmdb_poster_image.dart';
 ///
 /// 평점(점수·후기·등록일)은 MovieLog 자체 백엔드의 값이고,
 /// 제목·포스터는 TMDB 에서 가져온 값이다.
+///
+/// 카드 오른쪽은 모드에 따라 달라진다. 기본 모드에서는 수정·삭제 버튼,
+/// 편집(다중 선택) 모드에서는 CheckBox 다. 두 동작 모두 이 Widget 이 직접
+/// 실행하지 않고 콜백으로 바깥에 넘긴다.
 class RatingCard extends StatelessWidget {
-  const RatingCard({super.key, required this.entry});
+  const RatingCard({
+    super.key,
+    required this.entry,
+    this.onEdit,
+    this.onDelete,
+    this.isSelectable = false,
+    this.isSelected = false,
+    this.onSelectionChanged,
+  });
 
   final RatingWithMovie entry;
+
+  /// 기본 모드의 수정·삭제. null 이면 그 버튼을 그리지 않는다.
+  final VoidCallback? onEdit;
+  final VoidCallback? onDelete;
+
+  /// 편집 모드 여부. true 면 수정·삭제 버튼 대신 CheckBox 를 보여준다.
+  final bool isSelectable;
+  final bool isSelected;
+  final VoidCallback? onSelectionChanged;
 
   static const _posterWidth = 64.0;
   static const _posterHeight = 96.0;
@@ -36,7 +57,9 @@ class RatingCard extends StatelessWidget {
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
         color: AppColors.white,
-        border: Border.all(color: AppColors.border),
+        border: Border.all(
+          color: isSelectable && isSelected ? AppColors.violet : AppColors.border,
+        ),
         borderRadius: BorderRadius.circular(14),
       ),
       child: Row(
@@ -80,8 +103,51 @@ class RatingCard extends StatelessWidget {
               ],
             ),
           ),
+          if (isSelectable)
+            Checkbox(
+              value: isSelected,
+              onChanged: onSelectionChanged == null
+                  ? null
+                  : (_) => onSelectionChanged!(),
+            )
+          else
+            _CardActions(onEdit: onEdit, onDelete: onDelete),
         ],
       ),
+    );
+  }
+}
+
+/// 카드 오른쪽의 수정·삭제 버튼.
+///
+/// 내가 작성한 평점만 보여주는 화면이므로 두 버튼을 함께 둔다. (서버도 403 으로
+/// 남의 평점 수정·삭제를 거부한다)
+class _CardActions extends StatelessWidget {
+  const _CardActions({this.onEdit, this.onDelete});
+
+  final VoidCallback? onEdit;
+  final VoidCallback? onDelete;
+
+  @override
+  Widget build(BuildContext context) {
+    if (onEdit == null && onDelete == null) return const SizedBox.shrink();
+
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        if (onEdit != null)
+          IconButton(
+            icon: const Icon(Icons.edit_outlined, size: 20),
+            tooltip: '수정',
+            onPressed: onEdit,
+          ),
+        if (onDelete != null)
+          IconButton(
+            icon: const Icon(Icons.delete_outline, size: 20),
+            tooltip: '삭제',
+            onPressed: onDelete,
+          ),
+      ],
     );
   }
 }

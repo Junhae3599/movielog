@@ -4,17 +4,18 @@ import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 
 import '../data/models/tmdb_movie_dto.dart';
-import '../data/services/member_check_service.dart';
 import '../data/services/rating_api_service.dart';
+import '../data/services/sign_up_service.dart';
 import '../data/services/tmdb_movie_service.dart';
 import '../screens/home/home_screen.dart';
 import '../screens/main_shell.dart';
-import '../screens/movie_detail/movie_detail_screen.dart';
+import '../screens/movie_detail/movie_detail_loader.dart';
 import '../screens/movies/movie_list_screen.dart';
 import '../screens/my_ratings/my_ratings_screen.dart';
 import '../screens/profile/profile_screen.dart';
 import '../screens/sign_up/sign_up_screen.dart';
 import '../start_screen.dart';
+import '../view_models/learning_member_session.dart';
 import '../view_models/movie_home_view_model.dart';
 import '../view_models/movie_list_view_model.dart';
 import '../view_models/my_ratings_view_model.dart';
@@ -34,7 +35,7 @@ final appRouter = GoRouter(
     GoRoute(
       path: '/sign-up',
       builder: (context, state) => ChangeNotifierProvider<SignUpViewModel>(
-        create: (context) => SignUpViewModel(context.read<MemberCheckService>()),
+        create: (context) => SignUpViewModel(context.read<SignUpService>()),
         child: const SignUpScreen(),
       ),
     ),
@@ -88,16 +89,22 @@ final appRouter = GoRouter(
                   // 하단 NavigationBar 가 그대로 남는다. root Navigator 위에
                   // push 해 NavigationBar 를 가린 전체 화면으로 띄운다.
                   parentNavigatorKey: _rootNavigatorKey,
-                  builder: (context, state) =>
-                      ChangeNotifierProvider<MyRatingsViewModel>(
-                    create: (context) => MyRatingsViewModel(
-                      context.read<RatingApiService>(),
-                      context.read<TmdbMovieService>(),
-                      // 6주차는 로그인 전이므로 학습용 memberId 1 을 본다.
-                      sampleMemberId,
-                    )..load(),
-                    child: const MyRatingsScreen(),
-                  ),
+                  builder: (context, state) {
+                    // 7주차부터는 가입 결과로 받은 학습용 memberId 로 조회한다.
+                    // 6주차의 고정 memberId 1 을 새 회원의 ID 처럼 쓰지 않는다.
+                    final memberId =
+                        context.read<LearningMemberSession>().memberId;
+                    if (memberId == null) return const _NeedSignUpScreen();
+
+                    return ChangeNotifierProvider<MyRatingsViewModel>(
+                      create: (context) => MyRatingsViewModel(
+                        context.read<RatingApiService>(),
+                        context.read<TmdbMovieService>(),
+                        memberId,
+                      )..load(),
+                      child: const MyRatingsScreen(),
+                    );
+                  },
                 ),
               ],
             ),
@@ -109,13 +116,40 @@ final appRouter = GoRouter(
       path: '/movies/:movieId',
       // NavigationBar 를 덮고 전체 화면으로 열린다.
       parentNavigatorKey: _rootNavigatorKey,
-      builder: (context, state) => MovieDetailScreen(
+      builder: (context, state) {
         // 경로에는 TMDB 가 부여한 영화 id 가 그대로 들어간다.
-        // 이 값이 이후 평점 저장 시 자체 백엔드의 movieId 가 된다.
-        movieId: int.tryParse(state.pathParameters['movieId'] ?? ''),
+        // 이 값이 평점 저장 시 자체 백엔드의 movieId 가 된다.
+        final id = int.tryParse(state.pathParameters['movieId'] ?? '');
+        if (id == null || id < 1) {
+          return const Scaffold(
+            body: Center(child: Text('영화 ID가 올바르지 않습니다.')),
+          );
+        }
+
         // 목록에서 이미 받아 둔 영화 정보를 함께 넘겨 다시 요청하지 않는다.
-        movie: state.extra is TmdbMovieDto ? state.extra as TmdbMovieDto : null,
-      ),
+        // URL 로 직접 들어오면 extra 가 없으므로 Loader 가 TMDB 에 다시 묻는다.
+        final extra = state.extra;
+        return MovieDetailLoader(
+          movieId: id,
+          initialMovie: extra is TmdbMovieDto && extra.id == id ? extra : null,
+        );
+      },
     ),
   ],
 );
+
+/// 학습용 회원가입을 하지 않은 상태로 평점 화면에 들어왔을 때.
+///
+/// memberId 가 없으면 조회할 경로를 만들 수 없다. 6주차처럼 1 로 대신 보지 않고
+/// 회원가입이 필요하다고 알린다.
+class _NeedSignUpScreen extends StatelessWidget {
+  const _NeedSignUpScreen();
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(centerTitle: true, title: const Text('내가 등록한 평점')),
+      body: const Center(child: Text('학습용 회원가입이 필요합니다.')),
+    );
+  }
+}
