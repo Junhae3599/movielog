@@ -2,8 +2,11 @@
 
 import 'package:flutter_test/flutter_test.dart';
 
+import 'package:movielog/view_models/auth_view_model.dart';
 import 'package:movielog/view_models/my_ratings_view_model.dart';
+import 'package:movielog/view_models/session_rating_store.dart';
 
+import 'fakes/fake_auth.dart';
 import 'fakes/fake_rating_api_service.dart';
 import 'fakes/fake_tmdb_movie_service.dart';
 import 'fakes/movie_log_fixtures.dart';
@@ -12,22 +15,60 @@ import 'test_helpers.dart';
 MyRatingsViewModel buildViewModel({
   FakeRatingApiService? ratingService,
   FakeTmdbMovieService? movieService,
-  int memberId = testMemberId,
+  SessionRatingStore? store,
+  int? memberId = testMemberId,
 }) {
   return MyRatingsViewModel(
     ratingService ?? FakeRatingApiService(),
     movieService ?? FakeTmdbMovieService(),
-    memberId,
+    AuthViewModel(
+      FakeAuthApiService(),
+      FakeMemberApiService(),
+      FakeTokenStorage(),
+    ),
+    store ?? SessionRatingStore(),
+    memberId: memberId,
   );
 }
 
 void main() {
-  test('조회 대상은 생성자로 받은 학습용 memberId 다', () async {
+  test('memberId 를 알면 공개 조회로 전체 목록을 읽는다', () async {
     final service = FakeRatingApiService();
-    await buildViewModel(ratingService: service).load();
+    final viewModel = buildViewModel(ratingService: service);
+    await viewModel.load();
 
     // 6주차의 고정 상수 1 이 아니라 가입 결과로 받은 id 로 묻는다.
     expect(service.fetchCalls, equals([testMemberId]));
+    expect(viewModel.source, MyRatingsSource.server);
+  });
+
+  group('memberId 를 모를 때 (v7 계약의 한계)', () {
+    test('공개 조회를 보내지 않고 이번 세션의 평점만 보여준다', () async {
+      final service = FakeRatingApiService();
+      final store = SessionRatingStore()..upsert(fakeRating(42, movieId: 550));
+
+      final viewModel = buildViewModel(
+        ratingService: service,
+        store: store,
+        memberId: null,
+      );
+      await viewModel.load();
+
+      // memberId 를 지어내서 공개 조회를 보내지 않는다.
+      expect(service.fetchCalls, isEmpty);
+      expect(viewModel.source, MyRatingsSource.session);
+      expect(viewModel.ratings.single.rating.ratingId, 42);
+    });
+
+    test('세션 평점이 없으면 오류가 아니라 Empty 다', () async {
+      final viewModel = buildViewModel(
+        store: SessionRatingStore(),
+        memberId: null,
+      );
+      await viewModel.load();
+
+      expect(viewModel.status, MyRatingsLoadStatus.empty);
+    });
   });
 
   group('네 가지 상태', () {

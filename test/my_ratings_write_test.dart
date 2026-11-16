@@ -7,15 +7,20 @@ import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
+import 'package:go_router/go_router.dart';
+
 import 'package:movielog/router/app_router.dart';
 import 'package:movielog/screens/my_ratings/widgets/delete_rating_dialog.dart';
 import 'package:movielog/screens/my_ratings/widgets/my_ratings_empty.dart';
 import 'package:movielog/screens/my_ratings/widgets/rating_card.dart';
 import 'package:movielog/theme/app_theme.dart';
+import 'package:movielog/view_models/auth_view_model.dart';
 import 'package:movielog/view_models/my_ratings_view_model.dart';
+import 'package:movielog/view_models/session_rating_store.dart';
 import 'package:movielog/widgets/movie_log_button.dart';
 import 'package:movielog/widgets/rating_dialog.dart';
 
+import 'fakes/fake_auth.dart';
 import 'fakes/fake_rating_api_service.dart';
 import 'fakes/fake_tmdb_movie_service.dart';
 import 'fakes/movie_log_fixtures.dart';
@@ -24,15 +29,27 @@ import 'test_helpers.dart';
 MyRatingsViewModel buildViewModel({
   FakeRatingApiService? ratingService,
   FakeTmdbMovieService? movieService,
+  AuthViewModel? auth,
+  SessionRatingStore? store,
 }) {
   return MyRatingsViewModel(
     ratingService ?? FakeRatingApiService(),
     movieService ?? FakeTmdbMovieService(),
-    testMemberId,
+    auth ??
+        AuthViewModel(
+          FakeAuthApiService(),
+          FakeMemberApiService(),
+          FakeTokenStorage(),
+        ),
+    store ?? SessionRatingStore(),
+    // memberId 를 알고 있는 경우(이번 세션에 가입한 회원)를 기본으로 둔다.
+    memberId: testMemberId,
   );
 }
 
 /// "내가 등록한 평점" 화면을 바로 띄운다.
+late GoRouter router;
+
 Future<void> pumpMyRatings(
   WidgetTester tester, {
   FakeRatingApiService? ratingService,
@@ -42,13 +59,19 @@ Future<void> pumpMyRatings(
   tester.view.devicePixelRatio = 2.0;
   addTearDown(tester.view.reset);
 
-  appRouter.go('/my/ratings');
+  // 보호 화면이므로 로그인 상태에서 시작해야 한다.
+  final auth = await signedInAuthViewModel();
+  router = createRouter(auth);
+  addTearDown(router.dispose);
+
+  router.go('/my/ratings');
   await tester.pumpWidget(
     withServices(
       movieService ?? FakeTmdbMovieService(),
       ratingApiService: ratingService ?? FakeRatingApiService(),
+      authViewModel: auth,
       memberId: testMemberId,
-      child: MaterialApp.router(theme: AppTheme.light, routerConfig: appRouter),
+      child: MaterialApp.router(theme: AppTheme.light, routerConfig: router),
     ),
   );
   await tester.pumpAndSettle();
@@ -60,21 +83,31 @@ Finder get confirmButton => find.byType(MovieLogButton).at(1);
 
 void main() {
   setUp(useInMemoryPreferences);
-  tearDown(() => appRouter.go('/'));
 
   group('MyRatingsViewModel.updateRating', () {
-    test('성공하면 목록을 다시 조회한다', () async {
+    test('v7 응답의 Rating 객체로 재조회 없이 카드를 갈아끼운다', () async {
       final service = FakeRatingApiService();
       final viewModel = buildViewModel(ratingService: service);
       await viewModel.load();
 
       await viewModel.updateRating(ratingId: 1, score: 4, comment: '고친 후기');
 
-      // 저장 뒤 GET 이 한 번 더 나간다.
-      expect(service.fetchCalls, hasLength(2));
+      // v6 은 result 가 null 이라 저장 뒤 GET 을 한 번 더 보냈다.
+      // v7 은 수정된 Rating 을 그대로 내려주므로 다시 묻지 않는다.
+      expect(service.fetchCalls, hasLength(1));
       expect(viewModel.ratings.first.rating.score, equals(4));
       expect(viewModel.ratings.first.rating.comment, equals('고친 후기'));
-      expect(viewModel.refreshWarning, isNull);
+    });
+
+    test('수정 요청에 memberId 가 들어가지 않는다', () async {
+      final service = FakeRatingApiService();
+      final viewModel = buildViewModel(ratingService: service);
+      await viewModel.load();
+
+      await viewModel.updateRating(ratingId: 1, score: 4);
+
+      // v7 보호 요청에는 memberId 를 보낼 자리가 없다. body 에도 넣지 않는다.
+      expect(service.updateCalls.single.body.keys, equals({'score', 'comment'}));
     });
 
     test('comment 를 보내지 않으면 기존 후기가 null 로 덮인다', () async {
@@ -119,23 +152,43 @@ void main() {
 
       expect(
         viewModel.actionMessage,
-        equals('본인이 작성한 평점만 수정하거나 삭제할 수 있습니다.'),
+        equals('본인이 작성한 평점만 수정하거나 삭제할 수 있어요.'),
       );
+      // 403 은 인가 실패다. 안내하고 목록만 맞추며, 로그아웃하지 않는다.
       expect(service.fetchCalls, hasLength(2));
     });
 
-    test('저장은 됐는데 GET 만 실패하면 저장 실패로 되돌리지 않는다', () async {
+    test('401 은 안내가 아니라 세션 정리로 이어진다', () async {
+      final storage = FakeTokenStorage(token: 'saved.token');
+      final auth = await signedInAuthViewModel(storage: storage);
+      final service = FakeRatingApiService(updateMode: FakeWriteMode.expired);
+      final viewModel = buildViewModel(ratingService: service, auth: auth);
+      await viewModel.load();
+
+      await expectLater(
+        viewModel.updateRating(ratingId: 1, score: 5),
+        throwsA(isA<DioException>()),
+      );
+
+      // 인증(401)과 인가(403)를 같은 처리로 묶지 않는다.
+      expect(auth.status, AuthStatus.signedOut);
+      expect(auth.sessionExpired, isTrue);
+      expect(storage.deleteCount, 1);
+      expect(viewModel.actionMessage, isNull);
+    });
+
+    test('조회가 실패하는 상황이어도 저장 성공은 그대로 남는다', () async {
       final service = FakeRatingApiService();
       final viewModel = buildViewModel(ratingService: service);
       await viewModel.load();
 
-      // 저장은 성공하고, 그 뒤 재조회만 실패하게 만든다.
+      // 재조회를 하지 않으므로 GET 이 망가져 있어도 저장 결과가 뒤집히지 않는다.
+      // (v6 에서는 저장 성공 뒤 GET 실패가 Error 화면을 띄웠다)
       service.mode = FakeRatingMode.failure;
       await viewModel.updateRating(ratingId: 1, score: 4);
 
-      // 예외를 던지지 않았으므로 Dialog 는 저장 성공으로 닫힌다.
-      expect(viewModel.status, equals(MyRatingsLoadStatus.error));
-      expect(viewModel.refreshWarning, contains('저장은 완료됐지만'));
+      expect(viewModel.status, equals(MyRatingsLoadStatus.success));
+      expect(viewModel.ratings.first.rating.score, equals(4));
     });
   });
 
@@ -148,7 +201,9 @@ void main() {
       await viewModel.deleteRating(1);
 
       expect(service.deleteCalls, equals([1]));
-      expect(service.fetchCalls, hasLength(2));
+      // 삭제 성공은 200 + result null 이다. 지운 건만 목록에서 빼면 되므로
+      // 재조회하지 않는다.
+      expect(service.fetchCalls, hasLength(1));
       expect(viewModel.ratings.map((e) => e.rating.ratingId), isNot(contains(1)));
     });
 
@@ -173,7 +228,7 @@ void main() {
         throwsA(isA<DioException>()),
       );
 
-      expect(viewModel.actionMessage, equals('존재하지 않는 평점입니다.'));
+      expect(viewModel.actionMessage, equals('이미 삭제된 평점이에요. 목록을 새로고침합니다.'));
       expect(service.fetchCalls, hasLength(2));
     });
   });
@@ -278,7 +333,7 @@ void main() {
       expect(find.byType(RatingDialog), findsNothing);
       expect(service.updateCalls.single.ratingId, equals(1));
       expect(service.updateCalls.single.comment, equals('고친 후기'));
-      // 재조회한 목록이 화면에 반영된다.
+      // 수정 응답의 Rating 객체가 그대로 카드에 반영된다.
       expect(find.text('고친 후기'), findsOneWidget);
     });
 
@@ -435,12 +490,12 @@ void main() {
       expect(find.text('고치려던 후기'), findsOneWidget);
       expect(tester.widget<MovieLogButton>(cancelButton).onPressed, isNotNull);
       expect(
-        find.text('본인이 작성한 평점만 수정하거나 삭제할 수 있습니다.'),
+        find.text('본인이 작성한 평점만 수정하거나 삭제할 수 있어요.'),
         findsOneWidget,
       );
     });
 
-    testWidgets('저장 성공 + GET 실패는 다시 조회 안내로 보여준다', (tester) async {
+    testWidgets('저장 뒤 재조회를 하지 않으므로 GET 이 망가져도 화면이 유지된다', (tester) async {
       final service = FakeRatingApiService(
         ratings: [fakeRating(1, score: 4, comment: '원래 후기')],
       );
@@ -448,22 +503,18 @@ void main() {
 
       await tester.tap(find.byIcon(Icons.edit_outlined));
       await tester.pumpAndSettle();
-      // 저장까지는 성공하고 그 뒤 재조회만 실패하게 만든다.
+      // v6 에서는 저장 뒤 GET 이 한 번 더 나가 이 설정이 Error 화면을 띄웠다.
+      // v7 은 수정 응답의 Rating 객체를 그대로 쓰므로 GET 을 보내지 않는다.
       service.mode = FakeRatingMode.failure;
+      await tester.enterText(find.byType(TextField), '고친 후기');
       await tester.tap(confirmButton);
       await tester.pumpAndSettle();
 
-      // 저장은 끝났으므로 Dialog 는 닫힌다.
       expect(find.byType(RatingDialog), findsNothing);
-      expect(find.textContaining('저장은 완료됐지만'), findsOneWidget);
-
-      // 조회만 다시 시도하면 목록이 돌아온다.
-      service.mode = FakeRatingMode.success;
-      await tester.tap(find.widgetWithText(MovieLogButton, '다시 시도'));
-      await tester.pumpAndSettle();
-
       expect(find.byType(RatingCard), findsOneWidget);
-      expect(find.textContaining('저장은 완료됐지만'), findsNothing);
+      expect(find.text('고친 후기'), findsOneWidget);
+      // 첫 조회 한 번뿐이다.
+      expect(service.fetchCalls, hasLength(1));
     });
   });
 }

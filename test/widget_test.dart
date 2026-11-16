@@ -2,28 +2,60 @@
 
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:provider/provider.dart';
 
 import 'package:movielog/screens/profile/profile_screen.dart';
 import 'package:movielog/screens/profile/widgets/profile_header.dart';
 import 'package:movielog/start_screen.dart';
 import 'package:movielog/theme/app_theme.dart';
+import 'package:movielog/view_models/auth_view_model.dart';
 import 'package:movielog/widgets/movie_log_button.dart';
-import 'package:movielog/widgets/stat_item.dart';
 
+import 'fakes/fake_auth.dart';
+import 'fakes/movie_log_fixtures.dart';
 import 'test_helpers.dart';
 
 Widget _wrap(Widget child) => MaterialApp(theme: AppTheme.light, home: child);
 
+/// 마이페이지는 AuthViewModel.member 를 구독하므로 함께 올린다.
+Widget _wrapProfile(AuthViewModel auth) {
+  return ChangeNotifierProvider<AuthViewModel>.value(
+    value: auth,
+    child: _wrap(const ProfileScreen()),
+  );
+}
+
 void main() {
   group('프로필 화면', () {
-    testWidgets('헤더, 통계, 장르가 표시된다', (tester) async {
-      await tester.pumpWidget(_wrap(const ProfileScreen()));
+    testWidgets('서버에서 받은 내 정보를 보여준다', (tester) async {
+      // 1주차의 하드코딩된 '무비러버' 가 아니라 GET me 응답에서 온 값이다.
+      final auth = await signedInAuthViewModel(
+        memberApi: FakeMemberApiService(
+          member: fakeMemberInfo(nickname: '영화광', email: 'me@movielog.com'),
+        ),
+      );
+      await tester.pumpWidget(_wrapProfile(auth));
+      await tester.pumpAndSettle();
 
       expect(find.text('내 프로필'), findsOneWidget);
-      expect(find.text('무비러버'), findsOneWidget);
-      expect(find.byType(StatItem), findsNWidgets(3));
-      expect(find.byType(Chip), findsNWidgets(3));
+      expect(find.text('영화광'), findsOneWidget);
+      expect(find.text('me@movielog.com'), findsOneWidget);
+      // Challenge: 가입일을 "2026.10.10 가입" 형식으로 보여준다.
+      expect(find.textContaining('가입'), findsOneWidget);
       expect(find.widgetWithText(TextButton, '프로필 수정'), findsOneWidget);
+      expect(find.widgetWithText(TextButton, '로그아웃'), findsOneWidget);
+    });
+
+    testWidgets('내 정보를 못 받았으면 재시도 버튼을 보여준다', (tester) async {
+      final auth = await signedInAuthViewModel(
+        memberApi: FakeMemberApiService(fetchError: networkError()),
+      );
+      await tester.pumpWidget(_wrapProfile(auth));
+      await tester.pumpAndSettle();
+
+      // 네트워크 실패이므로 로그아웃시키지 않고 재시도만 제공한다.
+      expect(auth.status, AuthStatus.signedIn);
+      expect(find.widgetWithText(MovieLogButton, '다시 시도'), findsOneWidget);
     });
 
     testWidgets('이미지가 없으면 기본 아이콘을 보여준다', (tester) async {
@@ -39,11 +71,28 @@ void main() {
   });
 
   group('시작 화면', () {
-    testWidgets('제목, 설명, 버튼이 표시된다', (tester) async {
+    testWidgets('세션 확인 중에는 인디케이터만 보여준다', (tester) async {
       await tester.pumpWidget(_wrap(const StartScreen()));
+      await tester.pump();
 
+      // 1주차 레이아웃을 그대로 쓰되, '시작하기' 버튼 자리가 바뀌었다.
       expect(find.text('영화의 순간을\n기록하세요'), findsOneWidget);
-      expect(find.widgetWithText(ElevatedButton, '시작하기'), findsOneWidget);
+      expect(find.byType(CircularProgressIndicator), findsOneWidget);
+      expect(find.text('다시 시도'), findsNothing);
+    });
+
+    testWidgets('세션 확인에 실패하면 안내와 재시도 버튼을 보여준다', (tester) async {
+      var retried = 0;
+      await tester.pumpWidget(
+        _wrap(StartScreen(message: '확인하지 못했어요.', onRetry: () => retried++)),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.text('확인하지 못했어요.'), findsOneWidget);
+      expect(find.byType(CircularProgressIndicator), findsNothing);
+
+      await tester.tap(find.widgetWithText(MovieLogButton, '다시 시도'));
+      expect(retried, 1);
     });
   });
 

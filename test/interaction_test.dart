@@ -3,6 +3,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
+import 'package:go_router/go_router.dart';
+
 import 'package:movielog/router/app_router.dart';
 import 'package:movielog/screens/movie_detail/movie_detail_loader.dart';
 import 'package:movielog/screens/movies/widgets/genre_filter_sheet.dart';
@@ -10,6 +12,9 @@ import 'package:movielog/theme/app_theme.dart';
 import 'package:movielog/widgets/movie_card.dart';
 import 'package:movielog/widgets/movie_log_button.dart';
 import 'package:movielog/widgets/movie_rating_input.dart';
+
+import 'package:movielog/screens/login/login_screen.dart';
+import 'package:movielog/view_models/auth_view_model.dart';
 
 import 'fakes/fake_rating_api_service.dart';
 import 'fakes/fake_tmdb_movie_service.dart';
@@ -28,13 +33,19 @@ Future<FakeTmdbMovieService> pumpApp(
 
   final fake = service ?? FakeTmdbMovieService();
 
-  appRouter.go(at);
+  // 8주차: Router 가 인증 상태를 보므로 로그인한 상태에서 시작한다.
+  auth = await signedInAuthViewModel();
+  router = createRouter(auth);
+  addTearDown(router.dispose);
+
+  router.go(at);
   await tester.pumpWidget(
     withServices(
       fake,
       ratingApiService: ratingService,
+      authViewModel: auth,
       memberId: memberId,
-      child: MaterialApp.router(theme: AppTheme.light, routerConfig: appRouter),
+      child: MaterialApp.router(theme: AppTheme.light, routerConfig: router),
     ),
   );
   await tester.pumpAndSettle();
@@ -89,9 +100,12 @@ Finder get confirmButton => find.byType(MovieLogButton).at(1);
 MovieLogButton buttonOf(WidgetTester tester, Finder finder) =>
     tester.widget<MovieLogButton>(finder);
 
+/// 테스트 하나가 쓰는 Router 와 인증 상태.
+late GoRouter router;
+late AuthViewModel auth;
+
 void main() {
   setUp(useInMemoryPreferences);
-  tearDown(() => appRouter.go('/'));
 
   testWidgets('즐겨찾기를 누르면 아이콘이 바뀌고 Snackbar 가 뜬다', (tester) async {
     await openFirstMovieDetail(tester);
@@ -242,13 +256,21 @@ void main() {
     expect(service.createCalls, hasLength(1));
   });
 
-  testWidgets('회원가입 전에는 평점 남기기 버튼이 잠긴다', (tester) async {
-    await openFirstMovieDetail(tester, memberId: null);
+  testWidgets('화면이 열린 뒤 Token 이 만료되면 상세 화면이 로그인으로 바뀐다', (tester) async {
+    await openFirstMovieDetail(tester);
+    expect(find.widgetWithText(ElevatedButton, '평점 남기기'), findsOneWidget);
 
-    final button = tester.widget<ElevatedButton>(
-      find.widgetWithText(ElevatedButton, '회원가입 후 가능'),
-    );
-    expect(button.onPressed, isNull);
+    // 보는 동안 세션이 끝난 경우. 화면 코드가 이동을 지시하지 않아도
+    // 상태가 바뀌면 Router 가 보호 화면을 치운다.
+    await auth.expireSession();
+    await tester.pumpAndSettle();
+
+    expect(find.byType(LoginScreen), findsOneWidget);
+    expect(find.widgetWithText(ElevatedButton, '평점 남기기'), findsNothing);
+    // 왜 갑자기 로그인 화면이 떴는지 알려 준다. 로그인 화면이 표시를 소비하므로
+    // 다시 그려져도 같은 Snackbar 가 반복되지 않는다.
+    expect(find.text('로그인이 만료됐어요. 다시 로그인해 주세요.'), findsOneWidget);
+    expect(auth.sessionExpired, isFalse);
   });
 
   testWidgets('BottomSheet 의 장르는 Genre API 결과로 채워진다', (tester) async {
