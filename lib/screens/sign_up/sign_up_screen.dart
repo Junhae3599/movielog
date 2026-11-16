@@ -103,15 +103,21 @@ class _SignUpScreenState extends State<SignUpScreen> {
 
     if (viewModel.submitStatus == SubmitStatus.success &&
         viewModel.createdMemberId != null) {
-      context.read<LearningMemberSession>().setMemberId(
-            viewModel.createdMemberId!,
+      // 가입 응답의 memberId 를 이메일과 함께 기억해 둔다. 공개 유저별 평점
+      // 조회(`/v7/members/{memberId}/ratings`)가 쓰는 유일한 출처이고,
+      // 로그인 응답에는 memberId 가 없다.
+      context.read<LearningMemberSession>().remember(
+            memberId: viewModel.createdMemberId!,
+            email: _emailController.text,
           );
 
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('가입이 완료되었습니다.')),
+        const SnackBar(content: Text('가입이 완료되었습니다. 로그인해 주세요.')),
       );
-      // go 는 스택을 교체하므로 가입한 뒤 회원가입 화면으로 돌아갈 수 없다.
-      context.go('/movies');
+      // 8주차: 가입했다고 로그인된 것이 아니다. 서버가 요청자를 확인해 주는
+      // 것은 로그인으로 받은 Token 이므로, 가입 뒤에는 로그인 화면으로 보낸다.
+      // (go 는 스택을 교체하므로 가입 화면으로 되돌아갈 수 없다)
+      context.go('/login');
       return;
     }
 
