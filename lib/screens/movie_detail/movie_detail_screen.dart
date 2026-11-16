@@ -106,7 +106,7 @@ class _MovieDetailScreenState extends State<MovieDetailScreen> {
             padding: const EdgeInsets.fromLTRB(16, 20, 16, 0),
             child: Consumer<MovieDetailViewModel>(
               builder: (context, viewModel, child) =>
-                  _MovieInfo(movie: movie, myScore: viewModel.submittedScore),
+                  _MovieInfo(movie: movie, myScore: viewModel.submittedRating?.score),
             ),
           ),
           const Divider(height: 40, thickness: 8, color: AppColors.cardFill),
@@ -150,7 +150,8 @@ class _MovieDetailScreenState extends State<MovieDetailScreen> {
               ),
               const SizedBox(width: 12),
               Expanded(
-                // 가입 전에는 평점을 쓸 회원이 없으므로 버튼을 잠그고 안내한다.
+                // 로그인 전에는 서버가 요청자를 식별할 수 없으므로 버튼을 잠근다.
+              // (화면이 열려 있는 동안 Token 이 만료되는 경우를 위한 것이다)
                 child: Consumer<MovieDetailViewModel>(
                   builder: (context, viewModel, child) => ElevatedButton.icon(
                     onPressed: viewModel.canSubmit
@@ -158,7 +159,7 @@ class _MovieDetailScreenState extends State<MovieDetailScreen> {
                         : null,
                     icon: const Icon(Icons.rate_review_outlined, size: 20),
                     label: Text(
-                      viewModel.canSubmit ? '평점 남기기' : '회원가입 후 가능',
+                      viewModel.canSubmit ? '평점 남기기' : '로그인 후 가능',
                     ),
                     style: ElevatedButton.styleFrom(
                       minimumSize: const Size(0, 52),
