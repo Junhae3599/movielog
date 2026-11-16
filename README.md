@@ -25,10 +25,20 @@ Token 을 캡처·커밋 메시지·채팅에 그대로 붙여넣지 않습니�
 > Flutter asset 에 포함된 값은 배포 앱에서 완전한 비밀로 보호되지 않습니다.
 > 실제 운영 서비스에서는 백엔드 Proxy 를 두고 Token 을 서버에만 보관해야 합니다.
 
-평점 쓰기(등록·수정·삭제)는 **앱에서 학습용 회원가입을 마친 뒤** 열립니다. 가입 결과의
-memberId 를 메모리에만 보관하므로 앱을 다시 시작하면 가입 화면부터 다시 시작합니다.
-(아직 로그인이 없습니다. memberId 를 안다는 것은 인증이 아니며, 다음 주차에 JWT 로
-바뀝니다)
+8주차부터 앱은 **로그인**으로 시작합니다. 로그인하면 서버가 Access Token(JWT)을 주고,
+그 Token 을 `flutter_secure_storage` 에 저장해 앱을 껐다 켜도 로그인 상태를 이어갑니다.
+보호 API 는 요청 Header 의 Token 으로 요청자를 식별하므로, **요청 어디에도 memberId 를
+보내지 않습니다.**
+
+```bash
+# 계정이 없으면 로그인 화면의 '회원가입' 으로 먼저 가입합니다. (v6 POST /v6/members)
+# 가입은 로그인이 아니므로, 가입 뒤에는 로그인 화면으로 돌아가 로그인합니다.
+```
+
+비밀번호는 어디에도 저장하지 않습니다. 저장하는 것은 Access Token 하나(보안 저장소)와,
+"이메일 저장" 을 체크한 경우의 **이메일**(`shared_preferences`)뿐입니다.
+JWT·Authorization Header 는 로그·PR·스크린샷에 남기지 않습니다.
+(`ApiLoggingInterceptor` 가 Header 와 응답 body 의 `accessToken` 을 `***` 로 가립니다)
 
 ## 구조 — UI Layer 와 Data Layer 분리
 
@@ -40,10 +50,13 @@ lib/
 │
 ├─ core/                          [Data Layer] 앱 전역 설정
 │  ├─ config/tmdb_config.dart            — .env 에서 Token 을 읽는 한 곳
+│  ├─ storage/token_storage.dart         — Access Token 보안 저장소      (8주차)
 │  └─ network/
 │     ├─ tmdb_client.dart                — TMDB 전용 Dio Client
-│     ├─ movie_log_client.dart           — 자체 백엔드 전용 Dio Client (6주차)
-│     └─ api_logging_interceptor.dart    — 요청·응답·오류 로그 (Token 은 마스킹)
+│     ├─ movie_log_client.dart           — 공개용 + 보호용 Client 2개     (8주차)
+│     ├─ auth_interceptor.dart           — 보호 경로에만 Bearer 부착      (8주차)
+│     ├─ api_error.dart                  — 실패 응답의 code/message 추출  (8주차)
+│     └─ api_logging_interceptor.dart    — 요청·응답·오류 로그 (Token 마스킹)
 │
 ├─ data/                          [Data Layer]
 │  ├─ models/
@@ -56,12 +69,18 @@ lib/
 │  │  ├─ common_response.dart            — v6 공통 응답 Wrapper<T>     (7주차)
 │  │  ├─ create_member_request.dart      — 회원가입 요청 body          (7주차)
 │  │  ├─ sign_up_models.dart             — 가입 성공 result            (7주차)
-│  │  └─ rating_request.dart             — 평점 등록·수정 요청 body     (7주차)
+│  │  ├─ rating_request.dart             — 평점 등록·수정 요청 body     (7주차)
+│  │  ├─ login_models.dart               — 로그인 요청/result          (8주차)
+│  │  └─ member_info.dart                — GET me 의 내 정보           (8주차)
 │  ├─ services/
 │  │  ├─ tmdb_movie_service.dart         — HTTP 요청과 DTO 변환만 담당
 │  │  ├─ sign_up_service.dart            — 중복 확인 + 회원가입 POST    (7주차)
-│  │  └─ rating_api_service.dart         — 평점 조회·등록·수정·삭제     (7주차)
-│  └─ preferences/genre_preference.dart  — 마지막으로 고른 장르 ID 저장
+│  │  ├─ rating_api_service.dart         — 공개 조회 + 보호 쓰기 (2 Client) (8주차)
+│  │  ├─ auth_api_service.dart           — 로그인 (공개 Client)         (8주차)
+│  │  └─ member_api_service.dart         — 내 정보 조회·수정 (보호 Client) (8주차)
+│  └─ preferences/
+│     ├─ genre_preference.dart           — 마지막으로 고른 장르 ID 저장
+│     └─ saved_email_preference.dart     — '이메일 저장' 체크 값         (8주차)
 │
 ├─ view_models/                   [UI Layer] 화면(페이지)마다 하나
 │  ├─ movie_home_view_model.dart         — 인기 영화 5개
@@ -69,10 +88,17 @@ lib/
 │  ├─ sign_up_view_model.dart            — 중복 확인 + 회원가입 제출     (7주차)
 │  ├─ movie_detail_view_model.dart       — 평점 등록                   (7주차)
 │  ├─ my_ratings_view_model.dart         — 평점 조회·수정·삭제          (7주차)
-│  ├─ learning_member_session.dart       — 가입 결과 memberId (앱 전역)  (7주차)
+│  ├─ auth_view_model.dart               — 로그인·세션 복원·로그아웃     (8주차)
+│  ├─ edit_profile_view_model.dart       — 닉네임 수정                 (8주차)
+│  ├─ session_rating_store.dart          — 이번 세션에 등록한 평점       (8주차)
+│  ├─ learning_member_session.dart       — 가입 응답의 memberId (앱 전역)
 │  └─ submit_status.dart                 — idle/submitting/success/error
 │
 ├─ screens/                       [UI Layer] View
+│  ├─ login/login_screen.dart            — 로그인 + 만료 안내 Snackbar   (8주차)
+│  ├─ profile/
+│  │  ├─ profile_screen.dart             — GET me 기반 마이페이지        (8주차)
+│  │  └─ edit_profile_screen.dart        — 닉네임 수정                  (8주차)
 │  ├─ movie_detail/
 │  │  ├─ movie_detail_loader.dart        — extra 가 없으면 TMDB 재조회   (7주차)
 │  │  └─ movie_detail_screen.dart        — 평점 등록
@@ -123,40 +149,180 @@ lib/
 포스터는 `poster_path` 가 파일 경로만 내려오므로
 `https://image.tmdb.org/t/p/w500` + `poster_path` 로 조합합니다. (`TmdbPosterImage`)
 
-## 사용하는 MovieLog 백엔드 API (v6)
+## 사용하는 MovieLog 백엔드 API (v6 가입 + v7 인증·평점)
 
-baseUrl 은 `https://workbook.devnoco.com` 입니다. 7주차에 경로를 `v5` → `v6` 으로
-올리고 쓰기 API 네 개를 더했습니다.
+baseUrl 은 `https://workbook.devnoco.com` 입니다. 8주차에 인증과 평점 쓰기를 `v7` 로
+올렸습니다. 회원가입과 중복 확인은 v6 계약 그대로 둡니다. (이미 프론트와 끝난 계약입니다)
+
+### 공개 API — Token 을 보내지 않습니다
 
 | 용도 | Method | URL | 성공 응답 |
 | --- | --- | --- | --- |
 | 닉네임 중복 확인 | GET | `/v6/members/nickname/{nickname}` | 200 + `{"available": true}` |
 | 이메일 중복 확인 | GET | `/v6/members/email/{email}` | 200 + `{"available": true}` |
 | 회원가입 | POST | `/v6/members` | 201 + 공통 응답(`result` = 회원 정보) |
-| 유저별 평점 조회 | GET | `/v6/members/{memberId}/ratings` | 200 + 평점 배열 (없으면 `[]`) |
-| 평점 등록 | POST | `/v6/members/{memberId}/ratings` | 201 + 공통 응답 |
-| 평점 수정 | PATCH | `/v6/members/{memberId}/ratings/{ratingId}` | 200 + 공통 응답(`result` = null) |
-| 평점 삭제 | DELETE | `/v6/members/{memberId}/ratings/{ratingId}` | 204 + 본문 없음 |
+| 로그인 | POST | `/v7/auth/login` | 200 + 공통 응답(`result` = nickname, accessToken) |
+| 유저별 평점 조회 | GET | `/v7/members/{memberId}/ratings` | 200 + 평점 배열 (없으면 `[]`) |
 
-**"v6 이면 전부 공통 응답" 이 아닙니다.** 신규 쓰기 API 의 성공과 v6 의 모든 실패는
-`{isSuccess, code, message, result}` 로 감싸지지만, v5 때부터 있던 중복 확인과 평점
-조회는 성공 시 **직접 객체/배열**을 그대로 돌려줍니다. 그래서 API 마다 성공 계약에
-맞춰 파싱합니다. (`CommonResponse<T>` / `CheckResult` / `List<RatingDto>` / 본문 없음)
+### 보호 API — `Authorization: Bearer {accessToken}` 이 필요합니다
+
+| 용도 | Method | URL | 성공 응답 |
+| --- | --- | --- | --- |
+| 내 정보 조회 | GET | `/v7/members/me` | 200 + 공통 응답(`result` = 이메일·닉네임·가입일) |
+| 내 정보 수정 | PATCH | `/v7/members/me` | 200 + 공통 응답(`result` = 수정된 내 정보) |
+| 평점 등록 | POST | `/v7/ratings` | 201 + 공통 응답(`result` = **Rating 객체**) |
+| 평점 수정 | PATCH | `/v7/ratings/{ratingId}` | 200 + 공통 응답(`result` = Rating 객체) |
+| 평점 삭제 | DELETE | `/v7/ratings/{ratingId}` | **200** + `result: null` |
+
+### v6 → v7 로 무엇이 바뀌었나
+
+URL 수정만이 아닙니다. Authorization Header, 성공 status, result 타입, 오류 code 가
+**함께** 바뀝니다. 하나만 고치면 "성공한 삭제가 실패로 보이는" 상태가 됩니다.
+
+| 동작 | v6 | v7 |
+| --- | --- | --- |
+| 등록 path | `/v6/members/{memberId}/ratings` | `/v7/ratings` |
+| 수정·삭제 path | 같은 경로 + `{ratingId}` | `/v7/ratings/{ratingId}` |
+| 사용자 식별 | path 의 memberId | `Authorization: Bearer ...` |
+| 등록 result | ID? / null (계약 불확실) | Rating 객체 |
+| 수정 result | null | Rating 객체 |
+| 삭제 성공 | 204, 본문 없음 | 200, Wrapper + `result: null` |
+| 도메인 오류 | `COMMON4xx` 중심 | `AUTH` / `MEMBER` / `RATING` 계열 |
+
+**memberId 를 body 나 query 로 옮기지 않았습니다.** v7 보호 요청에는 보낼 자리가 없습니다.
+값을 받지 않는 것이 그 값을 조작당하지 않는 방법입니다.
+
+v7 이 result 를 돌려주므로 **등록·수정 뒤에 목록을 다시 조회하지 않습니다.** v6 에서는
+result 가 null 이라 저장 뒤 GET 을 한 번 더 보냈고, 그 GET 이 실패하면 "저장은 됐는데
+화면은 실패" 로 보이는 문제가 있었습니다. (7주차 트러블슈팅 No.8)
+
+### 오류 code 를 어떻게 나누는가
+
+v7 은 code 가 도메인별로 갈라져 **status 만으로는 처리를 정할 수 없습니다.**
+같은 401 이 로그인 입력 오류일 수도, 보호 요청의 Token 만료일 수도 있습니다.
+
+| code | 상태 | 어디에 보여주고 무엇을 하는가 |
+| --- | --- | --- |
+| `AUTH401_1` | 401 | 로그인 Form 오류 문구. **세션을 정리하지 않습니다.** |
+| `AUTH401_2/3/4` | 401 | Token 없음·무효·만료 → 세션 정리 후 `/login` + 만료 Snackbar |
+| `RATING403_1` | 403 | 안내만. 인가 실패이므로 **로그아웃하지 않습니다.** |
+| `RATING409_1` | 409 | "이미 평점을 남겼어요" 안내. 기존 기록을 확인하게 합니다. |
+| `RATING404_1` | 404 | 목록이 서버와 어긋났다는 신호 → 안내 + 목록 새로고침 |
+| `MEMBER409_1` | 409 | 닉네임 입력칸 아래 errorText. **입력값을 유지합니다.** |
+| `COMMON400` | 400 | 서버 `message` 를 그대로 입력칸 아래에 씁니다. |
+| (code 없음) | — | 네트워크·타임아웃. 재시도 안내. **401 이 아닙니다.** |
+
+`isSessionExpiredCode()` 가 "세션을 정리할 401" 셋만 골라냅니다. 401 을 전부 한 처리로
+묶으면 로그인 실패 한 번에 "로그인이 만료됐어요" Snackbar 가 뜨고, 403 한 번에
+로그아웃됩니다.
+
+## 인증 흐름
+
+### 두 가지 로그인 경로를 구분합니다
 
 ```
-회원가입 201   {isSuccess: true, code: COMMON201, message: 회원가입에 성공했습니다.,
-                result: {memberId: 26, email: ..., nickname: ...}}
-평점 등록 201  {isSuccess: true, code: COMMON201, message: 평점 등록에 성공했습니다., result: 38}
-평점 수정 200  {isSuccess: true, code: COMMON200, message: 평점 수정에 성공했습니다., result: null}
-평점 삭제 204  (본문 없음 — response.data as Map 을 부르면 성공인데도 파싱 오류가 난다)
-중복 확인 200  {available: true}                      ← Wrapper 없음
-평점 조회 200  [{ratingId: 38, movieId: 550, ...}]     ← Wrapper 없음
+신규 로그인   POST /v7/auth/login → Token 저장 → signedIn → MainShell 이 GET me
+앱 재시작    저장소에서 Token 읽기 → GET me 로 서버 검증 → 성공 뒤에만 signedIn
 ```
 
-오류 `code` 는 **문구가 아니라 다음 행동**을 정하는 데 씁니다. 같은 `COMMON404` 가
-등록에서는 "존재하지 않는 유저입니다.", 수정·삭제에서는 "존재하지 않는 평점입니다."
-이기 때문에, 화면 문구는 서버 `message` 를 그대로 쓰고 code 로는 "목록을 다시 읽을지"
-만 판단합니다. (`shouldRefreshAfterRatingError` — 403·404 만 재조회)
+**Token 문자열이 있다는 이유만으로 signedIn 으로 넘어가지 않습니다.** 이미 만료된
+Token 으로 홈에 들어가면, 뒤늦게 보호 화면에서 401 을 받고 사용자가 영문도 모른 채
+로그인 화면으로 튕깁니다. 그래서 재시작 흐름은 GET me 로 서버에 물어본 뒤 확정합니다.
+
+반대로 신규 로그인은 방금 서버가 발급한 Token 이므로 같은 요청을 한 번 더 보내지
+않습니다. 내 정보는 세 탭을 감싸는 `MainShell` 이 한 번 불러옵니다.
+(홈 `initState` 에서 부르면, 로그인 후 바로 `/my` 로 들어가는 경우 member 가 빕니다)
+
+### 세션 확인 실패와 Token 무효를 구분합니다
+
+| 상황 | 상태 | Token |
+| --- | --- | --- |
+| `AUTH401_2/3/4` (서버의 확답) | `signedOut` + 만료 Snackbar | **삭제** |
+| 네트워크·타임아웃 | `retryRequired` (스플래시 + 다시 시도) | **유지** |
+| 기기 저장소 읽기 실패 | `retryRequired` | **유지** |
+
+지하철에서 앱을 켰다고 로그인 정보를 잃으면 안 됩니다.
+
+### Client 를 둘로 나눕니다
+
+```
+TMDB Client            Authorization: Bearer {TMDB_READ_ACCESS_TOKEN}
+MovieLog 공개 Client    Header 없음        — 로그인, 중복 확인, 공개 평점 조회
+MovieLog 보호 Client    Authorization: Bearer {MOVIELOG_JWT}  ← AuthInterceptor
+```
+
+Interceptor 는 클래스를 만드는 것만으로 동작하지 않습니다. 붙이는 대상은 화면도,
+개별 API 메서드도 아니라 **Client(Dio 인스턴스) 하나**입니다.
+
+`AuthInterceptor` 는 등록 위치와 별도로 host·path 를 한 번 더 확인합니다. 절대 URL 로
+요청하면 baseUrl 이 무시되므로, 보호용 Client 로 TMDB 나 이미지 CDN 을 부르는 코드가
+생기면 **우리 Token 이 남의 서버로 새 나갑니다.** 등록 위치만으로는 그것을 막을 수
+없습니다. (`test/auth_interceptor_test.dart` 가 이 경계를 고정합니다)
+
+`RatingApiService` 는 Dio 를 **두 개** 받습니다. 쓰기는 보호 API 로 바뀌었지만 유저별
+평점 조회는 공개 API 로 남았기 때문입니다. 어떤 Client 로 보낼지는 Service 가 메서드별로
+정하므로 ViewModel 코드는 바뀌지 않았습니다.
+
+### 화면 이동은 Router 하나가 정합니다
+
+로그인 화면은 `AuthViewModel.login()` 만 부르고 `context.go('/home')` 을 하지 않습니다.
+상태가 `signedIn` 으로 바뀌면 GoRouter 의 `redirect` 가 홈으로 보냅니다.
+
+```dart
+AuthStatus.initializing || AuthStatus.retryRequired => atStart ? null : '/',
+AuthStatus.signedOut    || AuthStatus.authenticating => atPublic ? null : '/login',
+AuthStatus.signedIn                                  => (atStart || atPublic) ? '/home' : null,
+```
+
+이렇게 하면 로그인·로그아웃·Token 만료가 **같은 규칙 한 곳**을 지나갑니다. 세 곳에
+흩어 놓으면 하나만 빠뜨려도 로그아웃한 뒤 보호 화면이 그대로 남습니다.
+
+`redirect` 는 이동할 때만 호출되므로 `refreshListenable: authViewModel` 을 걸어
+상태 변경에도 다시 검사하게 했습니다. 그래서 Router 를 `final appRouter = GoRouter(...)`
+상수에서 `createRouter(authViewModel)` 함수로 바꿨습니다.
+
+### 늦게 도착한 응답이 새 세션을 덮지 않습니다
+
+`AuthViewModel.sessionVersion` 은 로그아웃·회원 전환·만료마다 올라갑니다. 응답을 반영하기
+전에 요청 시작 시점의 버전과 비교해, 다르면 그 응답을 버립니다. 이것이 없으면 이전
+세션의 늦은 401 이 **방금 만든 새 세션을 지웁니다.**
+
+### 저장소를 무엇으로 나누는가
+
+| 저장하는 값 | 어디에 | 왜 |
+| --- | --- | --- |
+| Access Token | `flutter_secure_storage` (iOS Keychain / Android Keystore) | 노출되면 계정이 넘어간다 |
+| 이메일 (Challenge) | `shared_preferences` | 노출돼도 계정이 넘어가지 않는 편의값 |
+| 마지막 장르 필터 | `shared_preferences` | 민감하지 않다 |
+| **비밀번호** | **저장하지 않는다** | 저장할 이유가 없다 |
+
+기준은 "노출됐을 때 무슨 일이 벌어지는가" 입니다. `shared_preferences` 는 값을 평문으로
+저장하며, 패키지 공식 문서도 중요한 데이터 저장 용도로는 쓰지 말라고 안내합니다.
+
+## 알려진 계약 한계 — 내 평점 전체 복원
+
+v7 에는 **Token 기반 '내 평점 전체 GET' 이 없습니다.** 공개 유저별 평점 조회는
+`/v7/members/{memberId}/ratings` 로 memberId 를 요구하는데, v7 로그인·내 정보 응답에는
+memberId 가 없습니다. JWT payload 를 디코딩하거나 명세에 없는 field 를 추정하면 서버가
+claim 이름을 바꾸는 순간 앱이 깨지므로, 그 길은 택하지 않았습니다.
+
+그래서 "내가 등록한 평점" 화면의 출처가 둘로 갈립니다.
+
+| 상황 | 출처 | 보이는 것 |
+| --- | --- | --- |
+| 이번 세션에 **회원가입까지** 한 회원 | 공개 조회 (`memberId` 를 안다) | 전체 목록 |
+| 그 밖의 경우 (재시작 포함) | `SessionRatingStore` | 이번 세션에 등록한 평점만 |
+
+가입 응답의 memberId 는 **이메일과 함께** 기억하고, 지금 로그인한 회원의 이메일과 같을
+때만 씁니다(`LearningMemberSession.memberIdFor`). 다른 계정으로 로그인했을 때 남의
+memberId 로 조회해 그 사람의 평점을 내 평점으로 보여주는 일을 막습니다.
+
+후자일 때는 목록 위에 그 사실을 적습니다. **재시작 뒤 내 평점 전체 복원은 계약이
+확인되기 전까지 완료 기능으로 표시하지 않습니다.** 수정·삭제는 두 경우 모두 v7 보호
+API 로 하므로 동작이 같습니다.
+
+디스크에 평점 목록을 캐시해 두는 선택지도 있었지만 택하지 않았습니다. 서버 상태와
+어긋난 목록을 사용자가 자기 평점이라고 믿게 되는 쪽이 더 나쁩니다.
 
 ## 화면 정책
 
@@ -232,15 +398,23 @@ double.infinity → 부모가 허용하는 최대 너비 (넓은 자리: Form �
 입력창 옆에 둘 때는 `MovieLogTextFormField.inputHeight` 를 높이로 넘겨 입력창과
 같은 높이를 씁니다. 오류 문구가 붙어 입력창이 길어져도 버튼은 첫 줄 높이에 머뭅니다.
 
-## 검증 (2026-11-09)
+## 검증 (2026-11-16)
 
 ```
 flutter analyze              → No issues found!
-flutter test                 → All tests passed! (164개, live 2건 skip)
-flutter test --tags live --run-skipped
-                             → All tests passed! (27개, 실제 TMDB·MovieLog v6 호출)
-flutter build web --debug    → ✓ Built build/web
+flutter test                 → All tests passed! (228개, live 2건 skip)
+flutter test test/movie_log_live_test.dart --tags live --run-skipped
+                             → All tests passed! (21개, 실제 MovieLog v6 가입 + v7 인증·평점)
 ```
+
+8주차에 새로 추가한 테스트 파일은 넷입니다.
+
+| 파일 | 고정하는 규칙 |
+| --- | --- |
+| `auth_view_model_test.dart` | Token 유무로 signedIn 을 확정하지 않는다 / 네트워크 실패로 Token 을 지우지 않는다 / `AUTH401_1` 과 보호 401 을 나눈다 / 늦은 응답이 새 세션을 덮지 않는다 |
+| `auth_interceptor_test.dart` | Bearer 는 MovieLog 보호 경로에만 간다 (TMDB·이미지 CDN·공개 API 는 제외) |
+| `edit_profile_test.dart` | 입력칸 오류 / Snackbar 오류 / 세션 만료를 서로 다른 곳에 보여준다 |
+| `login_screen_test.dart` | 통신 중 입력·버튼 잠금 / 만료 Snackbar 가 한 번만 / 저장하는 것은 이메일뿐 |
 
 ### 실제 TMDB 호출 결과
 
@@ -284,6 +458,55 @@ flutter build web --debug    → ✓ Built build/web
 
 이때 화면에는 "TMDB 인증에 실패했어요. Token 설정을 확인해 주세요." 가 표시됩니다.
 `kDebugMode` 가 false 인 release 빌드에서는 Interceptor 를 달지 않으므로 이 로그가 출력되지 않습니다.
+
+### 실제 MovieLog 백엔드 v7 호출 결과 (8주차)
+
+`test/movie_log_live_test.dart` 의 8주차 구간입니다. 실행마다 새 학습용 계정을 만들고,
+만든 평점은 같은 실행 안에서 지웁니다. **Token 과 비밀번호는 로그에 남지 않습니다.**
+
+```
+[MovieLog 요청] POST .../v7/auth/login
+[MovieLog 응답] 200
+[MovieLog 응답 Body] {isSuccess: true, code: COMMON200, message: 로그인에 성공했습니다.,
+                      result: {nickname: mlog653262, accessToken: ***}}
+                                       ↑ 응답 body 의 accessToken 도 마스킹한다.
+                                         Header 만 가리면 로그인 응답에서 원문이 새 나간다.
+
+[MovieLog 요청] GET .../v7/members/me          ← 공개 Client (Interceptor 없음)
+[MovieLog 오류 status] 401
+[MovieLog 오류 Body] {isSuccess: false, code: AUTH401_2, message: 로그인이 필요한 요청입니다.}
+
+[MovieLog(auth) 요청] GET .../v7/members/me    ← 보호 Client
+[MovieLog(auth) 요청 Header] {accept: application/json, Authorization: Bearer ***}
+[MovieLog(auth) 응답] 200
+[MovieLog(auth) 응답 Body] {... result: {email: ..., nickname: mlog653262,
+                            createdAt: 2026-11-16T05:40:41.000Z}}
+                                       → memberId 가 없다. 그래서 내 평점 전체 복원이
+                                         계약상 불가능하다. (위 "알려진 계약 한계")
+
+[MovieLog 요청] POST .../v7/auth/login         ← 틀린 비밀번호
+[MovieLog 오류 Body] {isSuccess: false, code: AUTH401_1, ...}
+                                       → 입력 오류. 세션 정리 대상이 아니다.
+
+[MovieLog(auth) 요청] POST .../v7/ratings      ← body 에 memberId 가 없다
+[MovieLog(auth) 응답] 201
+[MovieLog(auth) 응답 Body] {... result: {ratingId: 15, movieId: 550, score: 5,
+                            comment: 라이브 테스트 등록, ...}}
+                                       → v6 과 달리 Rating 객체가 온다. 재조회 불필요.
+
+[MovieLog(auth) 요청] DELETE .../v7/ratings/15
+[MovieLog(auth) 응답] 200                      ← 204 가 아니다
+[MovieLog(auth) 응답 Body] {isSuccess: true, code: COMMON200,
+                            message: 평점을 삭제했습니다., result: null}
+
+[MovieLog 요청] GET .../v7/members/10/ratings  ← 공개 조회. Token 이 붙지 않는다
+[MovieLog 응답] 200
+[MovieLog 응답 Body] []
+```
+
+PATCH 가 전체 교체라는 것도 실제 서버로 확인했습니다. `comment` 를 생략해 보내면
+응답의 `comment` 가 `null` 로 돌아옵니다. 그래서 수정 Dialog 는 열 때 기존 score·comment
+두 값을 모두 채워 두고 항상 함께 보냅니다.
 
 ### 실제 MovieLog 백엔드(v6) 호출 결과
 
@@ -418,6 +641,20 @@ flutter test --tags live --run-skipped
   이탈을 막습니다. 단일 삭제는 반대로 요청이 끝날 때까지 Dialog 를 유지합니다.
   일부만 실패하면 **성공한 것만 목록에서 사라지고 실패한 id 는 선택 상태로 남아**
   바로 다시 시도할 수 있으며, 몇 건이 실패했는지 Snackbar 로 알립니다.
+  8주차에는 여기에 401 분기를 더했습니다. 만료를 만나면 **남은 요청을 더 보내지 않고**
+  (전부 401 이 될 것이므로) 세션을 정리합니다.
+- **이메일 저장 (8주차)** — 로그인 화면의 체크박스. `shared_preferences` 에 **이메일만**
+  저장합니다. 비밀번호와 Token 은 저장하지 않습니다. 체크를 풀고 로그인하면 저장된
+  이메일을 지웁니다. 저장된 값이 있으면 다음에 화면이 열릴 때 채워지고 체크도 켜집니다.
+- **마이페이지 내 정보 로딩·실패·재시도 (8주차)** — `MainShell` 이 시작한 로딩 상태
+  (`memberStatus`)를 구독합니다. 불러오는 동안은 인디케이터, `MemberLoadStatus.error`
+  일 때는 "다시 시도" 버튼입니다. **네트워크 실패로 로그아웃시키지 않습니다.**
+- **가입일 표시 (8주차)** — `MemberInfo.createdAt` 을 `2026.10.10 가입` 형식으로
+  닉네임 아래에 둡니다. 서버 값이 UTC 일 수 있으므로 `toLocal()` 로 바꿔 보여줍니다.
+- **변경 내용이 있을 때 뒤로가기 확인 (8주차)** — 프로필 수정 화면에서 닉네임을 바꾼
+  뒤 뒤로가기를 누르면 Dialog 로 확인합니다. "계속 수정" 은 입력값을 유지한 채 화면에
+  머무르고, "나가기" 는 마이페이지로 돌아갑니다. 바꾼 것이 없으면 묻지 않고 바로
+  나갑니다. 저장 중에는 `canPop: false` 로 이탈을 막습니다.
 
 ## 트러블슈팅
 
@@ -512,6 +749,9 @@ null 을 보내는 순간 성공 응답에서 앱이 죽는다.
 안내 문구도 "저장은 완료됐지만 목록을 불러오지 못했습니다. 조회만 다시 시도해
 주세요." 로 두어 같은 쓰기를 다시 보내지 않게 했다.
 
+> 8주차에 v7 로 옮기면서 이 코드는 지웠습니다. 원인이던 재조회 자체가 사라졌기
+> 때문입니다. 아래 No.11 참고.
+
 ### No.9 — Dialog 에서 별점을 고르면 입력하던 코멘트가 사라진다
 
 **이슈** 코멘트를 쓰다가 별점을 바꾸면 TextField 가 비워지고 커서가 맨 앞으로 갔다.
@@ -536,3 +776,68 @@ null 을 보내는 순간 성공 응답에서 앱이 죽는다.
 있게 했다. 기본값 `testMemberId = 7` 은 6주차 상수 1 과 다른 값이라, 화면이 세션이
 아니라 옛 상수를 계속 쓰고 있으면 테스트가 바로 깨진다.
 
+
+### No.11 — 저장 성공 뒤 GET 실패를 다루던 코드가 통째로 사라졌다
+
+**이슈** 8주차에 v7 로 옮기면서 No.8 의 `refreshWarning` 관련 테스트 두 건이 깨졌다.
+
+**문제** 버그가 아니라 **문제가 없어진 것**이었다. v6 은 등록·수정 result 가 null 이라
+저장 뒤 목록을 다시 읽어야 했고, 그 GET 이 실패하는 경우를 따로 다뤄야 했다.
+v7 은 저장된 Rating 객체를 그대로 내려주므로 재조회 자체를 하지 않는다.
+
+**해결** `refreshWarning` 과 `_refreshAfterWrite()` 를 지우고, 수정은 응답 객체로
+해당 카드만 갈아끼우는 `_replaceInList()` 로 바꿨다. 테스트도 "저장 뒤 재조회를 하지
+않으므로 GET 이 망가져도 화면이 유지된다" 로 뒤집어 같은 보장을 반대 방향에서 건다.
+남겨 둔 재조회는 403·404 하나뿐이다. 그때는 화면의 목록이 서버와 어긋났다는 신호다.
+
+### No.12 — Token 을 Header 에만 가렸더니 로그인 응답에서 원문이 샜다
+
+**이슈** 라이브 테스트 로그를 확인하다가 `POST /v7/auth/login` 응답 본문에
+`accessToken` 원문이 그대로 찍혀 있는 것을 발견했다.
+
+**문제** `ApiLoggingInterceptor` 는 요청 **Header** 의 `Authorization` 만 마스킹하고
+있었다. Token 이 처음 들어오는 길은 Header 가 아니라 **로그인 응답 body** 다.
+Header 만 가리는 것으로는 "Token 을 로그에 남기지 않는다" 를 지킬 수 없었다.
+
+**해결** `onResponse` 가 body 를 재귀적으로 훑어 `accessToken`·`password`·
+`authorization` key 의 값만 `***` 로 바꾼 **사본**을 찍게 했다. 원본을 고치지 않는
+것이 중요하다. 로그를 위해 응답 데이터를 건드리면 화면이 쓰는 값까지 `***` 가 된다.
+
+### No.13 — 스플래시 화면 테스트가 pumpAndSettle 에서 멈췄다
+
+**이슈** `initializing` 상태를 확인하는 Router 테스트가 "pumpAndSettle timed out"
+으로 실패했다.
+
+**문제** `pumpAndSettle()` 은 **애니메이션이 모두 끝날 때까지** 기다린다. 세션 확인
+중 스플래시에 있는 `CircularProgressIndicator` 는 끝없이 돌기 때문에 영원히 멈추지
+않는다. 테스트가 아니라 화면이 의도대로 동작한다는 증거였다.
+
+**해결** `pumpApp()` 에 `settle` 플래그를 두어 그 화면에 머무르는 테스트만
+`pump()` 한 프레임으로 끝내게 했다.
+
+### No.14 — 로그아웃 상태에서는 영화 상세에 들어갈 수 없다
+
+**이슈** "회원가입 전에는 평점 남기기 버튼이 잠긴다" 테스트가 버튼을 못 찾고 깨졌다.
+
+**문제** `authRedirect` 가 `/login`·`/sign-up` 을 뺀 모든 경로를 보호하므로,
+로그아웃 상태에서는 영화 상세에 **도달하지 못한다.** 7주차에는 memberId 가 없어도
+화면은 열렸기 때문에 통하던 테스트였다.
+
+**해결** 테스트를 "화면이 열린 뒤 Token 이 만료되면 상세 화면이 로그인으로 바뀐다"
+로 바꿨다. 화면 코드가 이동을 지시하지 않아도 Router 가 보호 화면을 치우고, 로그인
+화면이 만료 Snackbar 를 띄운다는 것까지 함께 확인한다.
+`MovieDetailViewModel.canSubmit` 은 Router 가 치우기 전 한 프레임을 위한 방어로 남겼고,
+그 쪽은 ViewModel 단위 테스트가 맡는다.
+
+### No.15 — `flutter_secure_storage` 를 추가한 뒤 Android 빌드가 실패했다
+
+**이슈** `flutter build apk --debug` 가 8초 만에
+"Gradle threw an error while downloading artifacts from the network" 로 끝났다.
+
+**문제** 메시지가 네트워크 문제처럼 보이지만 실제로는 **Android SDK 구성 요소가
+없어서** 였다. 보안 저장소 패키지가 끌어오는 네이티브 의존성이 CMake 3.22.1 을
+요구하는데, 그 패키지가 로컬 SDK 에 설치되어 있지 않았다.
+
+**해결** 같은 명령을 끝까지(약 28분) 돌려 두었다. Gradle 이 라이선스를 확인하고
+CMake 3.22.1 을 내려받아 설치한 뒤 `✓ Built build/app/outputs/flutter-apk/app-debug.apk`
+로 끝났다. 처음 실패는 다운로드가 시작되기 전에 끊긴 것이었고, 코드 문제가 아니었다.
