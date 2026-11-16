@@ -7,8 +7,9 @@ import '../../data/models/tmdb_movie_dto.dart';
 import '../../data/services/rating_api_service.dart';
 import '../../data/services/tmdb_movie_service.dart';
 import '../../theme/app_text_styles.dart';
-import '../../view_models/learning_member_session.dart';
+import '../../view_models/auth_view_model.dart';
 import '../../view_models/movie_detail_view_model.dart';
+import '../../view_models/session_rating_store.dart';
 import '../../widgets/common_app_bar.dart';
 import 'movie_detail_screen.dart';
 
@@ -70,11 +71,12 @@ class _MovieDetailLoaderState extends State<MovieDetailLoader> {
         }
 
         return ChangeNotifierProvider<MovieDetailViewModel>(
-          // 평점 경로에 들어갈 memberId 는 root 의 학습용 세션에서 읽는다.
-          // 6주차의 고정 memberId 1 을 새 회원의 ID 처럼 쓰지 않는다.
+          // 8주차: 평점 경로에서 memberId 가 사라졌다. 요청자는 Token 으로
+          // 식별되므로 ViewModel 에 넘길 것은 인증 상태(AuthViewModel)다.
           create: (context) => MovieDetailViewModel(
             context.read<RatingApiService>(),
-            context.read<LearningMemberSession>().memberId,
+            context.read<AuthViewModel>(),
+            context.read<SessionRatingStore>(),
             movie,
           ),
           child: const MovieDetailScreen(),

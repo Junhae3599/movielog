@@ -24,6 +24,7 @@ class MovieLogTextFormField extends StatelessWidget {
     this.suffixIcon,
     this.onChanged,
     this.onSubmitted,
+    this.enabled = true,
   });
 
   final String label;
@@ -57,6 +58,12 @@ class MovieLogTextFormField extends StatelessWidget {
   final ValueChanged<String>? onChanged;
   final VoidCallback? onSubmitted;
 
+  /// false 면 입력을 받지 않는다. (통신 중, 또는 수정할 수 없는 값)
+  ///
+  /// 로그인 요청이 나가 있는 동안 이메일·비밀번호를 고칠 수 있으면, 화면의
+  /// 값과 실제로 보낸 값이 달라져 실패 원인을 설명할 수 없게 된다.
+  final bool enabled;
+
   /// 입력창 한 줄의 높이.
   ///
   /// 오른쪽에 나란히 두는 버튼이 같은 높이를 쓸 수 있도록 공개한다.
@@ -75,6 +82,7 @@ class MovieLogTextFormField extends StatelessWidget {
       validator: validator,
       keyboardType: keyboardType,
       obscureText: obscureText,
+      enabled: enabled,
       // 입력하는 동안 바로 오류를 보여준다. 기본값(disabled)이면
       // validate() 를 직접 부르기 전까지 메시지가 뜨지 않는다.
       autovalidateMode: AutovalidateMode.onUserInteraction,

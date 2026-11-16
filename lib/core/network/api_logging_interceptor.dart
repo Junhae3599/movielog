@@ -18,6 +18,13 @@ class ApiLoggingInterceptor extends Interceptor {
   /// 로그 앞에 붙는 서버 이름. 어느 Client 의 호출인지 구분한다. (TMDB / MovieLog)
   final String tag;
 
+  /// 로그에 원문이 남으면 안 되는 key. (8주차)
+  ///
+  /// Header 만 가리는 것으로는 부족하다. **로그인 성공 응답의 body 에
+  /// `accessToken` 원문이 들어 있기 때문이다.** Body 를 그대로 찍으면
+  /// Header 를 가린 의미가 없어진다.
+  static const _maskedKeys = {'accessToken', 'password', 'authorization'};
+
   @override
   void onRequest(RequestOptions options, RequestInterceptorHandler handler) {
     // Authorization 원문이 찍히면 콘솔 로그나 화면 녹화로 Token 이 노출된다.
@@ -39,8 +46,25 @@ class ApiLoggingInterceptor extends Interceptor {
     debugPrint(
       '[$tag 응답] ${response.statusCode} ${response.requestOptions.uri}',
     );
-    debugPrint('[$tag 응답 Body] ${response.data}');
+    debugPrint('[$tag 응답 Body] ${_mask(response.data)}');
     handler.next(response);
+  }
+
+  /// Body 를 재귀적으로 훑어 민감한 값만 `***` 로 바꾼 사본을 만든다.
+  ///
+  /// 원본을 수정하지 않는다. 로그를 위해 응답 데이터를 건드리면 화면이 쓰는
+  /// 값까지 `***` 가 된다.
+  Object? _mask(Object? data) {
+    if (data is Map) {
+      return {
+        for (final entry in data.entries)
+          entry.key: _maskedKeys.contains('${entry.key}')
+              ? '***'
+              : _mask(entry.value),
+      };
+    }
+    if (data is List) return data.map(_mask).toList();
+    return data;
   }
 
   @override

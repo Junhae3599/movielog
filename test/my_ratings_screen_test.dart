@@ -6,6 +6,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
+import 'package:go_router/go_router.dart';
+
 import 'package:movielog/router/app_router.dart';
 import 'package:movielog/screens/my_ratings/my_ratings_screen.dart';
 import 'package:movielog/screens/my_ratings/widgets/my_ratings_empty.dart';
@@ -35,14 +37,20 @@ Future<void> openMyRatings(
   tester.view.devicePixelRatio = 2.0;
   addTearDown(tester.view.reset);
 
-  appRouter.go('/my');
+  // 보호 화면이므로 로그인한 상태에서 시작한다.
+  final auth = await signedInAuthViewModel();
+  router = createRouter(auth);
+  addTearDown(router.dispose);
+
+  router.go('/my');
   await tester.pumpWidget(
     withServices(
       movieService ?? FakeTmdbMovieService(),
       ratingApiService: ratingService ?? FakeRatingApiService(),
-      // 7주차 평점 화면은 가입 결과로 받은 memberId 가 있어야 열린다.
+      authViewModel: auth,
+      // 공개 조회로 전체 목록을 읽으려면 가입 응답의 memberId 가 필요하다.
       memberId: testMemberId,
-      child: MaterialApp.router(theme: AppTheme.light, routerConfig: appRouter),
+      child: MaterialApp.router(theme: AppTheme.light, routerConfig: router),
     ),
   );
   await tester.pumpAndSettle();
@@ -58,9 +66,11 @@ Future<void> openMyRatings(
   }
 }
 
+/// 테스트 하나가 쓰는 Router.
+late GoRouter router;
+
 void main() {
   setUp(useInMemoryPreferences);
-  tearDown(() => appRouter.go('/'));
 
   testWidgets('마이페이지에서 들어가고 뒤로 돌아온다', (tester) async {
     await openMyRatings(tester);

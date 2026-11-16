@@ -24,7 +24,12 @@ import 'widgets/rating_card.dart';
 /// 사용자 확인(Dialog)을 받는 일만 한다.
 ///
 /// 조회·수정·삭제는 모두 이 화면에서 한다. 평점 **등록**은 영화 상세 화면이다.
-/// 조회 대상은 회원가입 결과를 담아 둔 `LearningMemberSession.memberId` 다.
+///
+/// 8주차에는 목록의 출처가 둘로 갈린다. memberId 를 아는 경우(이번 세션에
+/// 회원가입까지 한 경우)에만 공개 조회로 전체 목록을 읽을 수 있고, 그렇지
+/// 않으면 이번 세션에 등록한 평점만 보여준다. v7 에 Token 기반 '내 평점 전체
+/// GET' 이 없고 로그인 응답에 memberId 도 없기 때문이다. 그 한계를 숨기지 않고
+/// 목록 위에 안내 줄로 적는다.
 class MyRatingsScreen extends StatefulWidget {
   const MyRatingsScreen({super.key});
 
@@ -67,10 +72,12 @@ class _MyRatingsScreenState extends State<MyRatingsScreen> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
-                    // 저장은 됐지만 목록을 못 읽은 경우. 재조회 실패로 Error 화면이
-                    // 떠도 "저장은 끝났다" 는 사실이 가려지지 않게 위에 둔다.
-                    if (viewModel.refreshWarning != null)
-                      _Notice(text: viewModel.refreshWarning!),
+                    // 이 목록이 전부가 아닐 수 있다는 사실을 가장 위에 적는다.
+                    if (viewModel.source == MyRatingsSource.session)
+                      const _Notice(
+                        text: '이번에 앱을 켠 뒤 등록한 평점만 보여줍니다. '
+                            'v7에는 토큰으로 내 평점 전체를 가져오는 API가 아직 없어요.',
+                      ),
                     Expanded(
                       child: switch (viewModel.status) {
                         MyRatingsLoadStatus.idle ||

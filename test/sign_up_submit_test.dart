@@ -42,7 +42,7 @@ Future<void> fillValidForm(WidgetTester tester) async {
 
 /// 회원가입 화면을 띄운다.
 ///
-/// 가입에 성공하면 화면이 `context.go('/movies')` 를 부르므로 GoRouter 가 필요하다.
+/// 가입에 성공하면 화면이 `context.go('/login')` 을 부르므로 GoRouter 가 필요하다.
 /// 이동한 곳이 어디인지만 확인하면 되니 목적지는 간단한 화면으로 둔다.
 Future<LearningMemberSession> pumpSignUp(
   WidgetTester tester, {
@@ -62,9 +62,9 @@ Future<LearningMemberSession> pumpSignUp(
             signUpScreen(service: service, session: session),
       ),
       GoRoute(
-        path: '/movies',
+        path: '/login',
         builder: (context, state) =>
-            const Scaffold(body: Center(child: Text('영화 목록'))),
+            const Scaffold(body: Center(child: Text('로그인'))),
       ),
     ],
   );
@@ -196,7 +196,7 @@ void main() {
   });
 
   group('회원가입 화면', () {
-    testWidgets('성공하면 memberId 를 학습용 세션에 담는다', (tester) async {
+    testWidgets('성공하면 memberId 를 이메일과 함께 세션에 담는다', (tester) async {
       final service = FakeSignUpService(createdMemberId: 55);
       final session = await pumpSignUp(tester, service: service);
 
@@ -204,9 +204,11 @@ void main() {
       await tester.tap(submitButton);
       await tester.pumpAndSettle();
 
-      expect(session.memberId, equals(55));
-      // 가입 뒤에는 영화 목록으로 옮겨 간다.
-      expect(find.text('영화 목록'), findsOneWidget);
+      // 같은 이메일로 로그인했을 때만 이 memberId 를 공개 조회에 쓴다.
+      expect(session.memberIdFor('movie@example.com'), equals(55));
+      expect(session.memberIdFor('other@example.com'), isNull);
+      // 8주차: 가입했다고 로그인된 것이 아니므로 로그인 화면으로 보낸다.
+      expect(find.text('로그인'), findsWidgets);
       // 보낸 body 에는 세 값이 모두 들어간다. (비밀번호는 출력하지 않는다)
       expect(service.signUpCalls.single['email'], equals('movie@example.com'));
       expect(service.signUpCalls.single['nickname'], equals('무비러버'));
@@ -228,7 +230,7 @@ void main() {
         find.text('비밀번호는 대문자/소문자/숫자/특수문자를 포함한 8자 이상이어야 합니다.'),
         findsOneWidget,
       );
-      expect(session.memberId, isNull);
+      expect(session.memberIdFor('movie@example.com'), isNull);
 
       // 비밀번호를 고치면 그 문구가 사라진다.
       await tester.enterText(

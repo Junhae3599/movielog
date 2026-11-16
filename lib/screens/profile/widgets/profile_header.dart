@@ -10,11 +10,15 @@ class ProfileHeader extends StatelessWidget {
     super.key,
     required this.nickname,
     required this.introduction,
+    this.caption,
     this.imagePath,
   });
 
   final String nickname;
   final String introduction;
+
+  /// 닉네임 바로 아래에 작게 붙는 한 줄. (가입일 등)
+  final String? caption;
 
   /// 프로필 이미지 경로. null 이면 기본 아이콘을 보여준다.
   final String? imagePath;
@@ -38,6 +42,13 @@ class ProfileHeader extends StatelessWidget {
         ),
         const SizedBox(height: 16),
         Text(nickname, style: AppTextStyles.headline),
+        if (caption != null) ...[
+          const SizedBox(height: 6),
+          Text(
+            caption!,
+            style: AppTextStyles.label.copyWith(color: AppColors.bodyGray),
+          ),
+        ],
         const SizedBox(height: 12),
         Text(
           introduction,

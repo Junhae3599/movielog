@@ -1,7 +1,7 @@
 @Tags(['live'])
 library;
 
-// 실제 MovieLog 백엔드(워크북 v6)를 호출해 연동을 확인하는 테스트.
+// 실제 MovieLog 백엔드(워크북 v6 가입 + v7 인증/평점)를 호출해 연동을 확인한다.
 //
 // 기본 `flutter test` 에서는 dart_test.yaml 의 tag 설정으로 건너뛴다.
 // 확인할 때만 다음으로 실행한다:
@@ -11,29 +11,44 @@ library;
 // 평점과 TMDB 영화 정보를 함께 묶는 테스트는 .env 의 TMDB_ACCESS_TOKEN 도 쓴다.
 //
 // 이 테스트는 **학습용 계정을 실제로 만든다.** 매번 새 이메일·닉네임을 쓰고,
-// 만든 평점은 같은 테스트 안에서 지운다. 비밀번호는 출력하지 않는다.
+// 만든 평점은 같은 테스트 안에서 지운다. 비밀번호와 Token 은 출력하지 않는다.
 import 'dart:io';
 
 import 'package:dio/dio.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:flutter_test/flutter_test.dart';
 
+import 'package:movielog/core/network/api_error.dart';
 import 'package:movielog/core/network/movie_log_client.dart';
 import 'package:movielog/core/network/tmdb_client.dart';
 import 'package:movielog/data/models/create_member_request.dart';
+import 'package:movielog/data/models/login_models.dart';
 import 'package:movielog/data/models/rating_request.dart';
+import 'package:movielog/data/services/auth_api_service.dart';
+import 'package:movielog/data/services/member_api_service.dart';
 import 'package:movielog/data/services/rating_api_service.dart';
 import 'package:movielog/data/services/sign_up_service.dart';
 import 'package:movielog/data/services/tmdb_movie_service.dart';
+import 'package:movielog/view_models/auth_view_model.dart';
 import 'package:movielog/view_models/my_ratings_view_model.dart';
+import 'package:movielog/view_models/session_rating_store.dart';
 import 'package:movielog/view_models/sign_up_view_model.dart';
+
+import 'fakes/fake_auth.dart';
 
 /// 테스트가 만들 계정. 같은 값을 다시 쓰면 409 가 되므로 실행마다 다르게 둔다.
 String _unique() => DateTime.now().millisecondsSinceEpoch.toString();
 
 void main() {
-  late Dio client;
+  late Dio publicClient;
+  late Dio authClient;
+
+  /// 기기 저장소 대신 쓰는 메모리 TokenStorage. 실제 Interceptor 가 여기서 읽는다.
+  late FakeTokenStorage tokenStorage;
+
   late SignUpService signUpService;
+  late AuthApiService authApiService;
+  late MemberApiService memberApiService;
   late RatingApiService ratingService;
   late TmdbMovieService movieService;
 
@@ -49,9 +64,16 @@ void main() {
     TestWidgetsFlutterBinding.ensureInitialized();
     await dotenv.load(fileName: '.env');
 
-    client = createMovieLogClient();
-    signUpService = SignUpService(client);
-    ratingService = RatingApiService(client);
+    // 8주차: Client 를 공개용과 보호용으로 나눈다.
+    // 보호용에만 AuthInterceptor 가 붙어 Authorization Header 를 싣는다.
+    tokenStorage = FakeTokenStorage();
+    publicClient = createMovieLogClient();
+    authClient = createAuthMovieLogClient(tokenStorage);
+
+    signUpService = SignUpService(publicClient);
+    authApiService = AuthApiService(publicClient);
+    memberApiService = MemberApiService(authClient);
+    ratingService = RatingApiService(publicClient, authClient);
     movieService = TmdbMovieService(createTmdbClient());
 
     final suffix = _unique();
@@ -141,7 +163,79 @@ void main() {
     });
   });
 
-  group('평점 CRUD', () {
+  group('로그인과 내 정보 (v7)', () {
+    test('POST /v7/auth/login — result 에 nickname 과 accessToken 이 온다', () async {
+      final result = await authApiService.login(
+        LoginRequest(email: createdEmail, password: password),
+      );
+
+      expect(result.nickname, equals(createdNickname));
+      expect(result.accessToken, isNotEmpty);
+      // 응답에 memberId 는 없다. 명세에 없는 값을 꺼내 쓰지 않는다.
+      expect(result.toString(), isNot(contains(result.accessToken)));
+
+      // 이후 보호 요청이 쓸 수 있도록 저장한다.
+      await tokenStorage.saveAccessToken(result.accessToken);
+    });
+
+    test('틀린 비밀번호는 AUTH401_1 이다 (세션 만료가 아니다)', () async {
+      try {
+        await authApiService.login(
+          LoginRequest(email: createdEmail, password: 'WrongPw1!'),
+        );
+        fail('401 이 와야 합니다');
+      } on DioException catch (error) {
+        expect(error.response?.statusCode, equals(401));
+        expect(apiErrorCode(error), equals('AUTH401_1'));
+        // 로그인 실패는 전역 세션 정리 대상이 아니다.
+        expect(isSessionExpiredCode(apiErrorCode(error)), isFalse);
+      }
+    });
+
+    test('Token 없이 GET /v7/members/me 를 부르면 AUTH401_2 다', () async {
+      // 공개용 Client 에는 Interceptor 가 없으므로 Header 가 붙지 않는다.
+      try {
+        await publicClient.get('/v7/members/me');
+        fail('401 이 와야 합니다');
+      } on DioException catch (error) {
+        expect(error.response?.statusCode, equals(401));
+        expect(apiErrorCode(error), equals('AUTH401_2'));
+        expect(isSessionExpiredCode(apiErrorCode(error)), isTrue);
+      }
+    });
+
+    test('GET /v7/members/me — 이메일·닉네임·가입일을 돌려준다', () async {
+      final me = await memberApiService.fetchMe();
+
+      expect(me.email, equals(createdEmail));
+      expect(me.nickname, equals(createdNickname));
+      expect(me.createdAt, isNotNull);
+    });
+
+    test('PATCH /v7/members/me — 같은 닉네임은 409 가 아니다', () async {
+      final same = await memberApiService.updateNickname(createdNickname);
+      expect(same.nickname, equals(createdNickname));
+
+      final renamed = 'edit${_unique().substring(_unique().length - 6)}';
+      final updated = await memberApiService.updateNickname(renamed);
+      expect(updated.nickname, equals(renamed));
+      createdNickname = renamed;
+    });
+
+    test('restoreSession 은 Token 을 서버에 확인한 뒤에만 signedIn 이 된다', () async {
+      final viewModel = AuthViewModel(
+        authApiService,
+        memberApiService,
+        tokenStorage,
+      );
+      await viewModel.restoreSession();
+
+      expect(viewModel.status, equals(AuthStatus.signedIn));
+      expect(viewModel.member?.email, equals(createdEmail));
+    });
+  });
+
+  group('평점 CRUD (v7 보호 API)', () {
     /// 가입 테스트가 먼저 돌아 memberId 가 채워져 있어야 한다.
     int memberId() {
       final id = createdMemberId;
@@ -160,35 +254,38 @@ void main() {
       expect(ratings, isEmpty);
     });
 
-    test('POST — 등록 뒤 GET 으로 저장을 확인한다', () async {
-      await ratingService.createRating(
-        memberId: memberId(),
-        request: const CreateRatingRequest(
+    test('POST /v7/ratings — 성공 result 가 Rating 객체다', () async {
+      final created = await ratingService.createRating(
+        const CreateRatingRequest(
           movieId: movieId,
           score: 5,
           comment: '라이브 테스트 등록',
         ),
       );
 
+      // v6 은 result 계약이 불확실해 재조회로 확인했다. v7 은 그 자리에서 확인된다.
+      expect(created.movieId, equals(movieId));
+      expect(created.score, equals(5));
+      expect(created.comment, equals('라이브 테스트 등록'));
+
+      // 공개 조회로도 같은 값이 보인다.
       final ratings = await ratingService.fetchMyRatings(memberId());
       expect(ratings, hasLength(1));
-      expect(ratings.first.movieId, equals(movieId));
-      expect(ratings.first.score, equals(5));
-      expect(ratings.first.comment, equals('라이브 테스트 등록'));
+      expect(ratings.first.ratingId, equals(created.ratingId));
 
-      ratingId = ratings.first.ratingId;
+      ratingId = created.ratingId;
     });
 
-    test('같은 영화에 다시 등록하면 409 다', () async {
+    test('같은 영화에 다시 등록하면 RATING409_1 이다', () async {
       try {
         await ratingService.createRating(
-          memberId: memberId(),
-          request: const CreateRatingRequest(movieId: movieId, score: 3),
+          const CreateRatingRequest(movieId: movieId, score: 3),
         );
         fail('409 가 와야 합니다');
       } on DioException catch (error) {
         expect(error.response?.statusCode, equals(409));
-        // 409 는 값만 고치거나 다시 시도하면 되는 오류라 재조회가 필요 없다.
+        expect(apiErrorCode(error), equals('RATING409_1'));
+        // 409 는 기존 기록을 확인하면 되는 오류라 재조회가 필요 없다.
         expect(shouldRefreshAfterRatingError(error), isFalse);
       }
     });
@@ -197,37 +294,56 @@ void main() {
       final id = ratingId;
       if (id == null) fail('등록 테스트가 먼저 성공해야 합니다');
 
-      await ratingService.updateRating(
-        memberId: memberId(),
+      final updated = await ratingService.updateRating(
         ratingId: id,
-        request: const UpdateRatingRequest(score: 4, comment: '라이브 테스트 수정'),
+        score: 4,
+        comment: '라이브 테스트 수정',
       );
 
-      final ratings = await ratingService.fetchMyRatings(memberId());
-      expect(ratings.first.score, equals(4));
-      expect(ratings.first.comment, equals('라이브 테스트 수정'));
+      // v7 수정도 Rating 객체를 돌려주므로 재조회 없이 확인된다.
+      expect(updated.score, equals(4));
+      expect(updated.comment, equals('라이브 테스트 수정'));
     });
 
-    test('없는 평점을 수정하면 404 이고 재조회가 필요하다', () async {
+    test('PATCH 는 부분 수정이 아니라 전체 교체다', () async {
+      final id = ratingId;
+      if (id == null) fail('등록 테스트가 먼저 성공해야 합니다');
+
+      // comment 를 비우면 기존 후기가 null 로 덮인다. 숨기지 않고 확인한다.
+      final cleared = await ratingService.updateRating(ratingId: id, score: 4);
+      expect(cleared.comment, isNull);
+
+      await ratingService.updateRating(
+        ratingId: id,
+        score: 4,
+        comment: '라이브 테스트 수정',
+      );
+    });
+
+    test('없는 평점을 수정하면 RATING404_1 이고 재조회가 필요하다', () async {
       try {
-        await ratingService.updateRating(
-          memberId: memberId(),
-          ratingId: 99999999,
-          request: const UpdateRatingRequest(score: 4),
-        );
+        await ratingService.updateRating(ratingId: 99999999, score: 4);
         fail('404 가 와야 합니다');
       } on DioException catch (error) {
         expect(error.response?.statusCode, equals(404));
+        expect(apiErrorCode(error), equals('RATING404_1'));
         expect(writeErrorMessage(error), contains('평점'));
         expect(shouldRefreshAfterRatingError(error), isTrue);
       }
     });
 
     test('평점의 movieId 로 TMDB 영화 정보까지 함께 묶는다', () async {
+      final auth = AuthViewModel(
+        authApiService,
+        memberApiService,
+        tokenStorage,
+      );
       final viewModel = MyRatingsViewModel(
         ratingService,
         movieService,
-        memberId(),
+        auth,
+        SessionRatingStore(),
+        memberId: memberId(),
       );
       await viewModel.load();
 
@@ -241,11 +357,12 @@ void main() {
       expect(entry.movie!.title, isNotEmpty);
     });
 
-    test('DELETE — 204 를 파싱하지 않고 성공으로 처리한다', () async {
+    test('DELETE — v7 은 204 가 아니라 200 + result null 이다', () async {
       final id = ratingId;
       if (id == null) fail('등록 테스트가 먼저 성공해야 합니다');
 
-      await ratingService.deleteRating(memberId: memberId(), ratingId: id);
+      // v6 의 `statusCode != 204` 검사를 그대로 두면 성공한 삭제가 실패로 보인다.
+      await ratingService.deleteRating(id);
 
       final ratings = await ratingService.fetchMyRatings(memberId());
       expect(ratings, isEmpty);
@@ -264,7 +381,7 @@ void main() {
     test('memberId 형식 오류 — 조회 400 을 우리 문구로 바꾼다', () async {
       // fetchMyRatings 는 int 만 받으므로 잘못된 경로는 Client 로 직접 부른다.
       try {
-        await client.get('/v6/members/abc/ratings');
+        await publicClient.get('/v7/members/abc/ratings');
         fail('400 이 와야 합니다');
       } on DioException catch (error) {
         expect(error.response?.statusCode, equals(400));

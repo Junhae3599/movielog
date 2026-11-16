@@ -1,5 +1,6 @@
 // MovieLog 자체 백엔드 응답을 흉내내는 테스트 fixture.
 import 'package:dio/dio.dart';
+import 'package:movielog/data/models/member_info.dart';
 import 'package:movielog/data/models/rating_dto.dart';
 
 /// 평점 한 건을 만든다. 지정하지 않은 값은 그럴듯한 기본값으로 채운다.
@@ -15,6 +16,19 @@ RatingDto fakeRating(
     movieId: movieId,
     score: score,
     comment: comment,
+    createdAt: DateTime.parse(createdAt),
+  );
+}
+
+/// GET /v7/members/me 의 result. **memberId 가 없다.**
+MemberInfo fakeMemberInfo({
+  String email = 'movie@example.com',
+  String nickname = '무비러버',
+  String createdAt = '2026-10-10T09:00:00.000Z',
+}) {
+  return MemberInfo(
+    email: email,
+    nickname: nickname,
     createdAt: DateTime.parse(createdAt),
   );
 }
@@ -46,6 +60,9 @@ Map<String, dynamic> signUpSuccessBody({
     result: {'memberId': memberId, 'email': email, 'nickname': nickname},
   );
 }
+
+/// 테스트에서 실패 응답을 만들 때 쓰는 RequestOptions 한 줄짜리 생성자.
+RequestOptions requestOptionsOf(String path) => RequestOptions(path: path);
 
 /// v6 공통 형식으로 내려오는 실패 응답을 DioException 으로 만든다.
 DioException commonError(
